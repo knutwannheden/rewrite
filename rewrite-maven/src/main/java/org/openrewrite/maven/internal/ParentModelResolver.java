@@ -15,6 +15,7 @@
  */
 package org.openrewrite.maven.internal;
 
+import io.micrometer.core.instrument.Metrics;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Parent;
 import org.apache.maven.model.Repository;
@@ -68,15 +69,15 @@ public class ParentModelResolver extends ProjectModelResolver {
     private static RemoteRepository httpsFallback(RemoteRepository repository) {
         RemoteRepository result = repository;
         try {
-            if(repository.getProtocol().equals("http")) {
+            if (repository.getProtocol().equals("http")) {
                 URLConnection connection = URI.create(repository.getUrl()).toURL().openConnection();
-                if(connection instanceof HttpURLConnection) {
+                if (connection instanceof HttpURLConnection) {
                     HttpURLConnection httpConnection = (HttpURLConnection) connection;
                     httpConnection.setRequestMethod("HEAD");
-                    if(httpConnection.getResponseCode() == 403) {
-                      result = new RemoteRepository.Builder(repository)
-                              .setUrl(repository.getUrl().replace("http:", "https:"))
-                              .build();
+                    if (httpConnection.getResponseCode() == 403) {
+                        result = new RemoteRepository.Builder(repository)
+                                .setUrl(repository.getUrl().replace("http:", "https:"))
+                                .build();
                     }
                 }
             }
@@ -89,7 +90,7 @@ public class ParentModelResolver extends ProjectModelResolver {
     @Override
     public void addRepository(Repository repository, boolean replace) throws InvalidRepositoryException {
         try {
-            if(repository.getUrl().contains("http:")) {
+            if (repository.getUrl().contains("http:")) {
                 URLConnection connection = URI.create(repository.getUrl()).toURL().openConnection();
                 if (connection instanceof HttpURLConnection) {
                     HttpURLConnection httpConnection = (HttpURLConnection) connection;
@@ -108,14 +109,16 @@ public class ParentModelResolver extends ProjectModelResolver {
     @SuppressWarnings("deprecation")
     @Override
     public ModelSource resolveModel(String groupId, String artifactId, String version) {
-        logger.trace("resolving model for: {}:{}", groupId, artifactId);
+        return Metrics.timer("resolve.model", "group.id", groupId, "artifact.id", artifactId).record(() -> {
+            logger.trace("resolving model for: {}:{}", groupId, artifactId);
 
-        try {
-            return super.resolveModel(groupId, artifactId, version);
-        } catch (UnresolvableModelException e) {
-            logger.error("unable to resolve model", e);
-            return new UnresolvedModelSource(groupId, artifactId, version);
-        }
+            try {
+                return super.resolveModel(groupId, artifactId, version);
+            } catch (UnresolvableModelException e) {
+                logger.error("unable to resolve model", e);
+                return new UnresolvedModelSource(groupId, artifactId, version);
+            }
+        });
     }
 
     @SuppressWarnings("deprecation")
@@ -127,16 +130,18 @@ public class ParentModelResolver extends ProjectModelResolver {
     @SuppressWarnings("deprecation")
     @Override
     public ModelSource resolveModel(Dependency dependency) {
-        logger.trace("resolving model for: {}:{}", dependency.getGroupId(), dependency.getArtifactId());
+        return Metrics.timer("resolve.model", "group.id", dependency.getGroupId(), "artifact.id", dependency.getArtifactId()).record(() -> {
+            logger.trace("resolving model for: {}:{}", dependency.getGroupId(), dependency.getArtifactId());
 
-        try {
-            return super.resolveModel(dependency);
-        } catch (UnresolvableModelException e) {
-            logger.error("unable to resolve model", e);
-            return new UnresolvedModelSource(dependency.getGroupId(),
-                    dependency.getArtifactId(),
-                    dependency.getVersion());
-        }
+            try {
+                return super.resolveModel(dependency);
+            } catch (UnresolvableModelException e) {
+                logger.error("unable to resolve model", e);
+                return new UnresolvedModelSource(dependency.getGroupId(),
+                        dependency.getArtifactId(),
+                        dependency.getVersion());
+            }
+        });
     }
 
     @Override

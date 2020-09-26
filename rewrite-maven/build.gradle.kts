@@ -17,5 +17,8 @@ dependencies {
     implementation("org.apache.maven:maven-core:latest.release")
     implementation("org.apache.maven:maven-settings-builder:latest.release")
 
+    implementation("io.micrometer.prometheus:prometheus-rsocket-client:latest.release")
+    implementation("io.rsocket:rsocket-transport-netty:1.0.2")
+
     testImplementation(project(":rewrite-test"))
 }

@@ -15,18 +15,42 @@
  */
 package org.openrewrite.maven
 
+import io.micrometer.core.instrument.Metrics
+import io.micrometer.prometheus.PrometheusConfig
+import io.micrometer.prometheus.PrometheusMeterRegistry
+import io.micrometer.prometheus.rsocket.PrometheusRSocketClient
+import io.rsocket.transport.netty.client.TcpClientTransport
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.openrewrite.Issue
 import org.openrewrite.Parser
+import reactor.netty.tcp.TcpClient
+import reactor.util.retry.Retry
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.time.Duration
 
 class MavenParserTest {
+
+    companion object {
+        private val registry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
+
+        init {
+            Metrics.addRegistry(registry)
+            PrometheusRSocketClient
+                    .build(registry,
+                            { registry.scrape() },
+                            TcpClientTransport.create("localhost", 7001)
+                    )
+                    .retry(Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(1))
+                            .maxBackoff(Duration.ofSeconds(3)))
+                    .connect()
+        }
+    }
 
     /**
      * This tests resolving dependencies from a password-protected repository with credentials provided by settings.xml.
@@ -164,7 +188,7 @@ class MavenParserTest {
     @Test
     fun milestoneParent() {
         val pom = MavenParser.builder().build()
-            .parse("""
+                .parse("""
                 <project>
                   <modelVersion>4.0.0</modelVersion>
                  
