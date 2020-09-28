@@ -72,6 +72,7 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
             // fast in-memory collection with limited size
             reader.versionsByArtifact = inMemoryDb
                     .hashMap("workspace.inmem")
+                    .counterEnable()
                     .keySerializer(ARTIFACT_SERIALIZER)
                     .valueSerializer(LIST_SERIALIZER)
                     .expireAfterCreate(10, TimeUnit.MINUTES)
@@ -105,6 +106,12 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
     }
 
     public void cacheVersions(Artifact artifact, List<String> versions) {
+        if (!versionsByArtifact.containsKey(artifact)) {
+            versionsByArtifact.put(artifact, versions);
+        }
+    }
+
+    public void cacheArtifact(Artifact artifact, String source) {
         if (!versionsByArtifact.containsKey(artifact)) {
             versionsByArtifact.put(artifact, versions);
         }

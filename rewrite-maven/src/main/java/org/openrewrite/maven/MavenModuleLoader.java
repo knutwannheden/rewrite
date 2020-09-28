@@ -135,8 +135,9 @@ class MavenModuleLoader {
                     repositorySystemSession,
                     repositorySystem,
                     new DefaultRemoteRepositoryManager(),
-                    remoteRepositories
-            );
+                    remoteRepositories,
+                    workspaceReader,
+                    localRepository);
 
             DefaultModelBuildingRequest modelBuildingRequest = new DefaultModelBuildingRequest()
                     .setModelResolver(resolver)
