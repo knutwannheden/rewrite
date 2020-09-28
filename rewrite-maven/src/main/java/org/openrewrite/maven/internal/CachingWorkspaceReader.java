@@ -26,7 +26,11 @@ import org.mapdb.*;
 import org.openrewrite.internal.lang.Nullable;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.OpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +43,7 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
     private static final Map<File, CachingWorkspaceReader> READER_BY_CACHE_DIR = new ConcurrentHashMap<>();
 
     HTreeMap<Artifact, List<String>> versionsByArtifact;
+    HTreeMap<Artifact, byte[]> artifactContentByArtifact;
 
     public static CachingWorkspaceReader forWorkspaceDir(@Nullable File workspace) {
         if (workspace != null) {
@@ -57,6 +62,12 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
                         .valueSerializer(LIST_SERIALIZER)
                         .create();
 
+                reader.artifactContentByArtifact = localRepositoryDiskDb
+                        .hashMap("workspace.artifacts")
+                        .keySerializer(ARTIFACT_SERIALIZER)
+                        .valueSerializer(BYTE_ARRAY_SERIALIZER)
+                        .create();
+
                 Metrics.gaugeMapSize("rewrite.maven.workspace.cache.size", Tags.of("layer", "disk"),
                         reader.versionsByArtifact);
 
@@ -72,9 +83,15 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
             // fast in-memory collection with limited size
             reader.versionsByArtifact = inMemoryDb
                     .hashMap("workspace.inmem")
-                    .counterEnable()
                     .keySerializer(ARTIFACT_SERIALIZER)
                     .valueSerializer(LIST_SERIALIZER)
+                    .expireAfterCreate(10, TimeUnit.MINUTES)
+                    .create();
+
+            reader.artifactContentByArtifact = inMemoryDb
+                    .hashMap("workspace.artifacts")
+                    .keySerializer(ARTIFACT_SERIALIZER)
+                    .valueSerializer(BYTE_ARRAY_SERIALIZER)
                     .expireAfterCreate(10, TimeUnit.MINUTES)
                     .create();
 
@@ -96,7 +113,20 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
 
     @Override
     public File findArtifact(Artifact artifact) {
-        // this module loader should never need to access artifact files
+        byte[] cacheEntry = artifactContentByArtifact.get(artifact);
+        if(cacheEntry != null) {
+            try {
+                // The frustrating WorkspaceReader interface insists on this being a java.io.File, which is basically
+                // impossible to mock. It's unfortunate to have to write bytes wy have in memory to disk, just so
+                // they can be read back into memory. This could be sped up by using an in-memory filesystem
+                File result = File.createTempFile(artifact.getGroupId() + "-" + artifact.getArtifactId(), "");
+                Files.write(result.toPath(), cacheEntry);
+                return result;
+            } catch (IOException e) {
+                // Maybe suppress and just return null instead
+                throw new UncheckedIOException(e);
+            }
+        }
         return null;
     }
 
@@ -111,9 +141,9 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
         }
     }
 
-    public void cacheArtifact(Artifact artifact, String source) {
+    public void cacheArtifact(Artifact artifact, byte[] data) {
         if (!versionsByArtifact.containsKey(artifact)) {
-            versionsByArtifact.put(artifact, versions);
+            artifactContentByArtifact.put(artifact, data);
         }
     }
 
@@ -155,6 +185,26 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
                 list.add(input.readUTF());
             }
             return list;
+        }
+    };
+
+    private static final Serializer<byte[]> BYTE_ARRAY_SERIALIZER = new Serializer<byte[]>() {
+        @Override
+        public void serialize(@NotNull DataOutput2 out, @NotNull byte[] value) throws IOException {
+            out.writeShort(value.length);
+            for(byte b : value) {
+                out.writeByte(b);
+            }
+        }
+
+        @Override
+        public byte[] deserialize(@NotNull DataInput2 input, int available) throws IOException {
+            short size = input.readShort();
+            byte[] result = new byte[size];
+            for(int i = 0; i < size; i++) {
+                result[i] = (byte) input.readUnsignedByte();
+            }
+            return result;
         }
     };
 }

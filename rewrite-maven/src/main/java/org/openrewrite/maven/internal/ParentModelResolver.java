@@ -31,6 +31,7 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.RequestTrace;
 import org.eclipse.aether.artifact.Artifact;
+import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.impl.RemoteRepositoryManager;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.slf4j.Logger;
@@ -123,8 +124,10 @@ public class ParentModelResolver extends ProjectModelResolver {
 
             try {
                 ModelSource modelSource = super.resolveModel(groupId, artifactId, version);
-                if (Paths.get(modelSource.getLocation()).startsWith(localRepository.toPath())) {
+                if (modelSource instanceof FileModelSource && Paths.get(modelSource.getLocation()).startsWith(localRepository.toPath())) {
                     // convert to inmem from cache
+                    Artifact artifact = new DefaultArtifact(groupId, artifactId, "pom", version);
+                    return cacheAndDeleteFile(artifact, (FileModelSource) modelSource);
                 }
                 return modelSource;
             } catch (UnresolvableModelException e) {
@@ -175,6 +178,7 @@ public class ParentModelResolver extends ProjectModelResolver {
             fileModelSource.getFile().delete();
 
             byte[] source = buffer.toByteArray();
+            workspaceReader.cacheArtifact(artifact, source);
 
             return new InMemModelSource(source, fileModelSource.getLocationURI(),
                     fileModelSource.getLocation());
@@ -196,7 +200,7 @@ public class ParentModelResolver extends ProjectModelResolver {
 
         @Override
         public ModelSource2 getRelatedSource(String relPath) {
-            throw new UnsupportedOperationException("should not happen");
+            return null;
         }
 
         @Override
