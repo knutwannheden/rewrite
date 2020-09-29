@@ -114,7 +114,7 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
     @Override
     public File findArtifact(Artifact artifact) {
         byte[] cacheEntry = artifactContentByArtifact.get(artifact);
-        if(cacheEntry != null) {
+        if (cacheEntry != null) {
             try {
                 // The frustrating WorkspaceReader interface insists on this being a java.io.File, which is basically
                 // impossible to mock. It's unfortunate to have to write bytes wy have in memory to disk, just so
@@ -191,19 +191,15 @@ public final class CachingWorkspaceReader implements WorkspaceReader {
     private static final Serializer<byte[]> BYTE_ARRAY_SERIALIZER = new Serializer<byte[]>() {
         @Override
         public void serialize(@NotNull DataOutput2 out, @NotNull byte[] value) throws IOException {
-            out.writeShort(value.length);
-            for(byte b : value) {
-                out.writeByte(b);
-            }
+            out.writeInt(value.length);
+            out.write(value);
         }
 
         @Override
         public byte[] deserialize(@NotNull DataInput2 input, int available) throws IOException {
-            short size = input.readShort();
+            int size = input.readInt();
             byte[] result = new byte[size];
-            for(int i = 0; i < size; i++) {
-                result[i] = (byte) input.readUnsignedByte();
-            }
+            input.readFully(result);
             return result;
         }
     };

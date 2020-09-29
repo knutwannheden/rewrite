@@ -34,6 +34,7 @@ import java.nio.file.Paths
 import java.time.Duration
 
 class MavenParserTest {
+    private val workspaceDir = createTempFile().apply { delete(); deleteOnExit() }
 
     companion object {
         private val registry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
@@ -99,6 +100,7 @@ class MavenParserTest {
         """.trimIndent()
 
         val pom = MavenParser.builder()
+                .workspaceDir(workspaceDir)
                 .noMavenCentral()
                 .userSettingsXml(Parser.Input(Paths.get("settings.xml"),
                         { ByteArrayInputStream(settingsXml.toByteArray()) },
@@ -160,6 +162,7 @@ class MavenParserTest {
         """.trimIndent()
 
         val pom = MavenParser.builder()
+                .workspaceDir(workspaceDir)
                 .userSettingsXml(Parser.Input(Paths.get("settings.xml"),
                         { ByteArrayInputStream(settingsXml.toByteArray()) },
                         true))
@@ -186,7 +189,9 @@ class MavenParserTest {
 
     @Test
     fun milestoneParent() {
-        val pom = MavenParser.builder().build()
+        val pom = MavenParser.builder()
+                .workspaceDir(workspaceDir)
+                .build()
                 .parse("""
                 <project>
                   <modelVersion>4.0.0</modelVersion>
@@ -217,7 +222,9 @@ class MavenParserTest {
 
     @Test
     fun milestoneDependencyManagement() {
-        val pom = MavenParser.builder().build()
+        val pom = MavenParser.builder()
+                .workspaceDir(workspaceDir)
+                .build()
                 .parse("""
                 <project>
                   <modelVersion>4.0.0</modelVersion>
@@ -275,7 +282,9 @@ class MavenParserTest {
             """.trimIndent().trim())
         }
 
-        val pom = MavenParser.builder().build()
+        val pom = MavenParser.builder()
+                .workspaceDir(workspaceDir)
+                .build()
                 .parse(pomFile.toPath(), tempDir)
 
         assertThat(pom.groupId).isEqualTo("com.mycompany.app")
@@ -311,6 +320,7 @@ class MavenParserTest {
         }
 
         val pom = MavenParser.builder()
+                .workspaceDir(workspaceDir)
                 .resolveDependencies(false)
                 .build()
                 .parse(pomFile.toPath(), tempDir)
@@ -367,6 +377,7 @@ class MavenParserTest {
         }
 
         val (pom, parentPom) = MavenParser.builder()
+                .workspaceDir(workspaceDir)
                 .resolveDependencies(false)
                 .build()
                 .parse(listOf(pomFile.toPath(), parentPomFile.toPath()), tempDir)
@@ -383,6 +394,7 @@ class MavenParserTest {
     @Test
     fun httpRepository(@TempDir tempDir: Path) {
         val pom = MavenParser.builder()
+                .workspaceDir(workspaceDir)
                 .remoteRepositories(emptyList())
                 .localRepository(tempDir.toFile())
                 .build()
