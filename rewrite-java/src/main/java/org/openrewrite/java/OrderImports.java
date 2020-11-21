@@ -22,10 +22,7 @@ import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.style.ImportLayoutStyle;
 import org.openrewrite.java.tree.J;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.regex.Pattern;
 
 import static java.util.Collections.emptyList;
@@ -94,7 +91,7 @@ public class OrderImports extends JavaIsoRefactorVisitor {
         List<J.Import> orderedImports = new ArrayList<>();
 
         if (importLayout == null) {
-            importLayout = cu.getStyle(ImportLayoutStyle.class)
+            importLayout = Optional.ofNullable(cu.getStyle(ImportLayoutStyle.class))
                     .map(ImportLayoutStyle::orderImportLayout)
                     .orElse(intellij());
         }
