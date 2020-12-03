@@ -338,7 +338,8 @@ interface AutoFormatTest : RefactorVisitorTest {
                     } void foo() {}
                     
                     
-                    void bar() {
+                    void bar() 
+                    {
                     }
                 }
             """,
@@ -455,21 +456,33 @@ interface AutoFormatTest : RefactorVisitorTest {
             """
     )
 
-    @Disabled("https://github.com/openrewrite/rewrite/issues/63")
+//    @Disabled("https://github.com/openrewrite/rewrite/issues/63")
+    // TODO: make another version of this test ensuring persistence of single and multiline comments
     @Test
     fun separatesStatementsWithEmptyFormatting(jp: JavaParser) = assertRefactored(
             jp,
             visitorsMapped =  listOf { a -> AutoFormat(a) },
             before = """
-                public class D {public String foo() {String foo = "foo";foo = foo + foo;return foo;}}
+                public class D {private String foo() {/*Comment
+                Other thought*/
+                // Testing new thing
+                // Something else
+                String foo = "foo";foo = foo + foo;return foo;/*Comment2*/}}
             """,
             after = """
                 public class D {
                 
-                    public String foo() {
+                    private String foo() {
+                        /*
+                        Comment
+                        Other thought
+                        */
+                        // Testing new thing
+                        // Something else
                         String foo = "foo";
                         foo = foo + foo;
                         return foo;
+                        /*Comment2*/
                     }
                 }
             """

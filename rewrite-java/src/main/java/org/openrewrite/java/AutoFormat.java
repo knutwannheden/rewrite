@@ -45,8 +45,8 @@ public class AutoFormat extends JavaIsoRefactorVisitor {
 
     @Override
     public J.CompilationUnit visitCompilationUnit(J.CompilationUnit cu) {
-        andThen(new FixNewlines());
         andThen(new FixIndentation());
+        andThen(new FixNewlines());
         return super.visitCompilationUnit(cu);
     }
 
@@ -129,18 +129,33 @@ public class AutoFormat extends JavaIsoRefactorVisitor {
          * Ensure there's a single blank line between the previous declaration and the current j
          * Ensure that any comments are on their own line
          */
-        private <T extends J> T spaceVertically(T j) {
+        private <T extends J> T spaceVertically(T j, int desiredNewlineCount) {
             Formatting originalFormatting = j.getFormatting();
             List<String> splitPrefix = splitCStyleComments(originalFormatting.getPrefix());
 
             String newPrefix = Stream.concat(
                     Stream.of(splitPrefix.get(0))
-                            .map(it -> StringUtils.ensureNewlineCountBeforeComment(it, 2)),
+                            .map(it -> StringUtils.ensureNewlineCountBeforeComment(it, desiredNewlineCount)),
                     splitPrefix.stream().skip(1)
                             .map(it -> StringUtils.ensureNewlineCountBeforeComment(it, 1))
             )
                     .collect(Collectors.joining());
             return j.withFormatting(originalFormatting.withPrefix(newPrefix));
+        }
+
+        /**
+         * Ensure there's a single blank line between the previous declaration and the current j.
+         * Ensure that any comments are on their own line.
+         */
+        private <T extends J> T spaceVertically(T j) {
+            return spaceVertically(j, 2);
+        }
+
+
+        @Override
+        public J.Block<J> visitBlock(J.Block<J> block) {
+            J.Block<J> b = super.visitBlock(block);
+            return b.withEnd(spaceVertically(block.getEnd(), 1));
         }
 
         @Override
@@ -192,6 +207,17 @@ public class AutoFormat extends JavaIsoRefactorVisitor {
                     }
 
                 }
+
+                // body of the method
+                List<Statement> statements = m.getBody().getStatements().stream()
+                        .map( statement -> {
+                            return statement.getPrefix().contains("\n") ?
+                                statement :
+                                statement.withPrefix("\n" + statement.getPrefix());
+                        })
+                        .collect(Collectors.toList());
+
+                m = m.withBody(m.getBody().withStatements(statements));
             }
 
             return m;
@@ -244,6 +270,7 @@ public class AutoFormat extends JavaIsoRefactorVisitor {
             setCursoringOn();
         }
 
+        // why is this done this way? Why not just compare r1 to r2?
         @Override
         public J reduce(J r1, J r2) {
             J j = super.reduce(r1, r2);
@@ -258,18 +285,60 @@ public class AutoFormat extends JavaIsoRefactorVisitor {
             J j = super.visitTree(tree);
 
             String prefix = tree.getPrefix();
+            //if prefix has "\n" and is in scope
             if (prefix.contains("\n") && stream(scope).anyMatch(s -> getCursor().isScopeInPath(s))) {
                 int indentMultiple = (int) getCursor().getPathAsStream().filter(J.Block.class::isInstance).count();
+
                 if(tree instanceof J.Block.End) {
                     indentMultiple--;
                 }
+
                 Formatter.Result wholeSourceIndent = formatter.wholeSourceIndent();
-                String shiftedPrefix = "|" + prefix.substring(0, prefix.lastIndexOf('\n') + 1) + range(0, indentMultiple * wholeSourceIndent.getIndentToUse())
+
+                // get comments that aren't just whitespace - must contain a comment or a \n
+                List<String> commentList = splitCStyleComments(prefix).stream()
+                        .filter(str -> !(StringUtils.isBlank(str) && !str.contains("\n")))
+                        .collect(Collectors.toList());
+
+                String indent = range(0, indentMultiple * wholeSourceIndent.getIndentToUse())
                         .mapToObj(n -> wholeSourceIndent.isIndentedWithSpaces() ? " " : "\t")
                         .collect(Collectors.joining(""));
 
-                if (!shiftedPrefix.equals(prefix)) {
-                    j = j.withPrefix(shiftedPrefix);
+                String newPrefix = "|";
+                for(String comment : commentList) {
+                    comment = comment.trim();
+
+                    /*
+                    for multiline comments with 2 or more lines
+                    place the comment start '/*' and end '* /' characters on their own lines
+                    */
+                    if(comment.startsWith("/*") && comment.contains("\n")) {
+                        if(comment.charAt(2) != '\n') {
+                            comment = comment.replace("/*", "/*\n");
+                        }
+                        if(comment.charAt(comment.length()-3) != '\n') {
+                            comment = comment.replace("*/", "\n*/");
+                        }
+                    }
+
+                    if(!StringUtils.isBlank(comment)) {
+                        String additionalIndent = "";
+                        // add additional indent to comment on closing } of a block to make it level with the body of the block
+                        if(tree instanceof J.Block.End) {
+                            additionalIndent = range(0, wholeSourceIndent.getIndentToUse())
+                                    .mapToObj(n -> wholeSourceIndent.isIndentedWithSpaces() ? " " : "\t")
+                                    .collect(Collectors.joining(""));
+                        }
+
+                        comment = comment.replaceAll("\n", "\n" + indent + additionalIndent);
+                        newPrefix += "\n" + indent + additionalIndent + comment;
+                    }
+                }
+
+                newPrefix += "\n" + indent;
+
+                if (!newPrefix.equals(prefix)) {
+                    j = j.withPrefix(newPrefix);
                 }
             }
 
