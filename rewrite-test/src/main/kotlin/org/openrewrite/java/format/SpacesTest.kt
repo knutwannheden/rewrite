@@ -32,16 +32,30 @@ interface SpacesTest : RecipeTest {
                         public void close() {
                         }
                     }
+                    class Person {
+                        private String name;
+                        
+                        public String getName() {
+                            return this.name;
+                        }
+                        
+                        public void setName(String name) {
+                            this.name = name;
+                        }
+                    }
                 """)
 
     val testCode: String
         get() = """
+                    import java.util.function.BiFunction;
+            
                     @SuppressWarnings({"ALL"})
                     public class A {
                         void bar() {}
                         void foo(int arg) {
                             Runnable r = () -> {};
                             Runnable r1 = this::bar;
+                            BiFunction<String, String, String> f = (s1, s2) -> { return "hi"; };
                             if (true) {
                                 foo(1);
                             } else {
@@ -57,7 +71,7 @@ interface SpacesTest : RecipeTest {
                             }
                             int[] arr2 = new int[]{};
                             int elem = arr[j];
-                            int x;
+                            int x = 0;
                             while (j < 1000 && x > 0) {
                                 j = j + 1;
                             }
@@ -94,7 +108,7 @@ interface SpacesTest : RecipeTest {
                             x = x * 2;
                             x = x / 2;
                             x = x % 2;
-                            boolean b;
+                            boolean b = false;
                             b = !b;
                             x = -x;
                             x = +x;
@@ -103,6 +117,10 @@ interface SpacesTest : RecipeTest {
                             x--;
                             --x;
                             x += (x + 1);
+                            
+                            Person p = new Person();
+                            p.setName("name");
+                            String name = p.getName();
                         }
                     }
                     
@@ -168,21 +186,29 @@ interface SpacesTest : RecipeTest {
                     isArrayInitializerBraces = true
                     isEmptyArrayInitializerBraces = true
                     isGroupingParentheses = true
+                    isMethodDeclarationParentheses = true
+                    isEmptyMethodDeclarationParentheses = true
+                    isMethodCallParentheses = true
+                    isEmptyMethodCallParentheses = true
+                    isIfParentheses = true
                 }
             })).build(),
             dependsOn = dependsOn,
             before = testCode,
             after = /* THE HORROR */ """
+                import java.util.function.BiFunction;
+                
                 @SuppressWarnings ( { "ALL" })
                 public class A{
-                    void bar (){}
-                    void foo (int arg){
-                        Runnable r=()->{};
+                    void bar ( ){}
+                    void foo ( int arg ){
+                        Runnable r=( )->{};
                         Runnable r1=this :: bar;
-                        if(true){
-                            foo (1);
+                        BiFunction<String, String, String> f=( s1, s2 )->{ return "hi"; };
+                        if( true ){
+                            foo ( 1 );
                         }else{
-                            foo (2);
+                            foo ( 2 );
                         }
                         int j=0;
                         for(int i=0; i<10||j>0; i ++){
@@ -194,7 +220,7 @@ interface SpacesTest : RecipeTest {
                         }
                         int[] arr2=new int[] { };
                         int elem=arr[ j ];
-                        int x;
+                        int x=0;
                         while(j<1000&&x>0){
                             j=j+1;
                         }
@@ -205,20 +231,20 @@ interface SpacesTest : RecipeTest {
                             case 1:
                             default:
                         }
-                        try(MyResource res1 = new MyResource(); MyResource res2 = null){
+                        try(MyResource res1=new MyResource ( ); MyResource res2=null){
                         }catch(Exception e){
                         }finally{
                         }
-                        Object o=new Object();
+                        Object o=new Object ( );
                         synchronized(o){
                         }
-                        if(x==0){
+                        if( x==0 ){
                         }
-                        if(j!=0){
+                        if( j!=0 ){
                         }
-                        if(x<=0){
+                        if( x<=0 ){
                         }
-                        if(j>=0){
+                        if( j>=0 ){
                         }
                         x=x<<2;
                         x=x>>2;
@@ -231,7 +257,7 @@ interface SpacesTest : RecipeTest {
                         x=x*2;
                         x=x/2;
                         x=x%2;
-                        boolean b;
+                        boolean b=false;
                         b=! b;
                         x=- x;
                         x=+ x;
@@ -240,6 +266,10 @@ interface SpacesTest : RecipeTest {
                         x --;
                         -- x;
                         x+=( x+1 );
+                        
+                        Person p=new Person ( );
+                        p.setName ( "name" );
+                        String name=p.getName ( );
                     }
                 }
  

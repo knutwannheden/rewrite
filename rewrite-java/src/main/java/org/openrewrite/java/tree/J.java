@@ -2261,6 +2261,11 @@ public interface J extends Serializable, Tree {
              */
             @With
             boolean terminatedWithSemicolon;
+
+            @Override
+            public <R, P> R acceptJava(JavaVisitor<R, P> v, P p) {
+                return v.visitResource(this, p);
+            }
         }
 
         @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)

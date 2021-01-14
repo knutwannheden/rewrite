@@ -706,6 +706,11 @@ public class JavaPrinter<P> implements JavaVisitor<String, P> {
     }
 
     @Override
+    public String visitResource(Try.Resource resource, P p) {
+        return fmt(resource, visit(resource.getVariableDecls(), p));
+    }
+
+    @Override
     public String visitReturn(Return retrn, P p) {
         return fmt(retrn, "return" + visit(retrn.getExpr(), p));
     }
@@ -736,15 +741,15 @@ public class JavaPrinter<P> implements JavaVisitor<String, P> {
     @Override
     public String visitTry(Try tryable, P p) {
         StringBuilder acc = new StringBuilder("try");
-
         if (tryable.getResources() != null) {
             acc.append(visit(tryable.getResources().getBefore())).append('(');
             List<JRightPadded<Try.Resource>> resources = tryable.getResources().getElem();
             for (int i = 0; i < resources.size(); i++) {
                 JRightPadded<Try.Resource> resource = resources.get(i);
 
-                acc.append(visit(resource.getElem().getPrefix()))
-                        .append(visit(resource.getElem().getVariableDecls(), p));
+                // replace after with EMPTY, after will be added later, after semicolon if resource is terminated with
+                // a semicolon
+                acc.append(visit(resource.withAfter(Space.EMPTY), "", p));
 
                 if (i < resources.size() - 1 || resource.getElem().isTerminatedWithSemicolon()) {
                     acc.append(';');
@@ -754,7 +759,6 @@ public class JavaPrinter<P> implements JavaVisitor<String, P> {
             }
             acc.append(')');
         }
-
         acc.append(visit(tryable.getBody(), p));
         acc.append(visit(tryable.getCatches(), p));
         acc.append(visit("finally", tryable.getFinally(), p));

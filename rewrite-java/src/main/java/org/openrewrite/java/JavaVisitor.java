@@ -62,6 +62,7 @@ public interface JavaVisitor<R, P> extends TreeVisitor<R, P> {
     R visitParameterizedType(J.ParameterizedType type, P p);
     <T extends J> R visitParentheses(J.Parentheses<T> parens, P p);
     R visitPrimitive(J.Primitive primitive, P p);
+    R visitResource(J.Try.Resource resource, P p);
     R visitReturn(J.Return retrn, P p);
     R visitSwitch(J.Switch switzh, P p);
     R visitSynchronized(J.Synchronized synch, P p);

@@ -556,6 +556,13 @@ public class JavaProcessor<P> extends TreeProcessor<J, P> implements JavaVisitor
     }
 
     @Override
+    public J visitResource(J.Try.Resource resource, P p) {
+        J.Try.Resource r = call(resource, p, this::visitEach);
+        r = r.withPrefix(visitSpace(r.getPrefix(), p));
+        return r.withVariableDecls(call(r.getVariableDecls(), p));
+    }
+
+    @Override
     public J visitReturn(J.Return retrn, P p) {
         J.Return r = call(retrn, p, this::visitEach);
         r = r.withPrefix(visitSpace(r.getPrefix(), p));

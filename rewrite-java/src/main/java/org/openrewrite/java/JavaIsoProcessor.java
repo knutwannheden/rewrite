@@ -256,6 +256,11 @@ public class JavaIsoProcessor<P> extends JavaProcessor<P> {
     }
 
     @Override
+    public J.Try.Resource visitResource(J.Try.Resource resource, P p) {
+        return (J.Try.Resource) super.visitResource(resource, p);
+    }
+
+    @Override
     public J.Return visitReturn(J.Return _return, P p) {
         return (J.Return) super.visitReturn(_return, p);
     }

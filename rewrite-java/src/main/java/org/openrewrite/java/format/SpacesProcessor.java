@@ -101,13 +101,283 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         if (methodDecl.getBody() != null) {
             methodDecl = methodDecl.withBody(spaceBefore(methodDecl.getBody(), style.getBeforeLeftBrace().isMethodLeftBrace()));
         }
+        if (methodDecl.getParams().getElem().iterator().next().getElem() instanceof J.Empty) {
+            if (style.getWithin().isEmptyMethodDeclarationParentheses()) {
+                if (StringUtils.isNullOrEmpty(methodDecl.getParams().getElem().iterator().next().getElem().getPrefix().getWhitespace())) {
+                    methodDecl = methodDecl.withParams(
+                            methodDecl.getParams().withElem(
+                                    ListUtils.mapFirst(methodDecl.getParams().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace(" ")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+            } else {
+                if (methodDecl.getParams().getElem().iterator().next().getElem().getPrefix().getWhitespace().equals(" ")) {
+                    methodDecl = methodDecl.withParams(
+                            methodDecl.getParams().withElem(
+                                    ListUtils.mapFirst(methodDecl.getParams().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace("")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        } else {
+            if (style.getWithin().isMethodDeclarationParentheses()) {
+                if (StringUtils.isNullOrEmpty(methodDecl.getParams().getElem().iterator().next().getElem().getPrefix().getWhitespace())) {
+                    methodDecl = methodDecl.withParams(
+                            methodDecl.getParams().withElem(
+                                    ListUtils.mapFirst(methodDecl.getParams().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace(" ")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+                if (StringUtils.isNullOrEmpty(methodDecl.getParams().getElem().get(methodDecl.getParams().getElem().size() - 1).getAfter().getWhitespace())) {
+                    methodDecl = methodDecl.withParams(
+                            methodDecl.getParams().withElem(
+                                    ListUtils.mapLast(methodDecl.getParams().getElem(),
+                                            e -> e.withAfter(
+                                                    e.getAfter().withWhitespace(" ")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            } else {
+                if (methodDecl.getParams().getElem().iterator().next().getElem().getPrefix().getWhitespace().equals(" ")) {
+                    methodDecl = methodDecl.withParams(
+                            methodDecl.getParams().withElem(
+                                    ListUtils.mapFirst(methodDecl.getParams().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace("")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+                if (methodDecl.getParams().getElem().get(methodDecl.getParams().getElem().size() - 1).getAfter().getWhitespace().equals(" ")) {
+                    methodDecl = methodDecl.withParams(
+                            methodDecl.getParams().withElem(
+                                    ListUtils.mapLast(methodDecl.getParams().getElem(),
+                                            e -> e.withAfter(
+                                                    e.getAfter().withWhitespace("")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        }
         return methodDecl;
     }
 
     @Override
     public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, P p) {
         J.MethodInvocation methodInvocation = super.visitMethodInvocation(method, p);
-        return methodInvocation.withArgs(spaceBefore(methodInvocation.getArgs(), style.getBeforeParentheses().isMethodCall()));
+        methodInvocation = methodInvocation.withArgs(spaceBefore(methodInvocation.getArgs(), style.getBeforeParentheses().isMethodCall()));
+
+        JRightPadded<Expression> firstArg = methodInvocation.getArgs().getElem().iterator().next();
+        if (firstArg.getElem() instanceof J.Empty) {
+            if (style.getWithin().isEmptyMethodCallParentheses()) {
+                if (StringUtils.isNullOrEmpty(firstArg.getElem().getPrefix().getWhitespace())) {
+                    methodInvocation = methodInvocation.withArgs(
+                            methodInvocation.getArgs().withElem(
+                                    ListUtils.mapFirst(methodInvocation.getArgs().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace(" ")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+            } else {
+                if (firstArg.getElem().getPrefix().getWhitespace().equals(" ")) {
+                    methodInvocation = methodInvocation.withArgs(
+                            methodInvocation.getArgs().withElem(
+                                    ListUtils.mapFirst(methodInvocation.getArgs().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace("")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        } else {
+            if (style.getWithin().isMethodCallParentheses()) {
+                if (StringUtils.isNullOrEmpty(firstArg.getElem().getPrefix().getWhitespace())) {
+                    methodInvocation = methodInvocation.withArgs(
+                            methodInvocation.getArgs().withElem(
+                                    ListUtils.mapFirst(methodInvocation.getArgs().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace(" ")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+                JRightPadded<Expression> lastArg = methodInvocation.getArgs().getElem().get(methodInvocation.getArgs().getElem().size() - 1);
+                if (StringUtils.isNullOrEmpty(lastArg.getAfter().getWhitespace())) {
+                    methodInvocation = methodInvocation.withArgs(
+                            methodInvocation.getArgs().withElem(
+                                    ListUtils.mapLast(methodInvocation.getArgs().getElem(),
+                                            e -> e.withAfter(
+                                                    e.getAfter().withWhitespace(" ")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            } else {
+                if (firstArg.getElem().getPrefix().getWhitespace().equals(" ")) {
+                    methodInvocation = methodInvocation.withArgs(
+                            methodInvocation.getArgs().withElem(
+                                    ListUtils.mapFirst(methodInvocation.getArgs().getElem(),
+                                            e -> e.withElem(
+                                                    e.getElem().withPrefix(
+                                                            e.getElem().getPrefix().withWhitespace("")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+                JRightPadded<Expression> lastArg = methodInvocation.getArgs().getElem().get(methodInvocation.getArgs().getElem().size() - 1);
+                if (lastArg.getAfter().getWhitespace().equals(" ")) {
+                    methodInvocation = methodInvocation.withArgs(
+                            methodInvocation.getArgs().withElem(
+                                    ListUtils.mapLast(methodInvocation.getArgs().getElem(),
+                                            e -> e.withAfter(
+                                                    e.getAfter().withWhitespace("")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        }
+        return methodInvocation;
+    }
+
+    @Override
+    public J.NewClass visitNewClass(J.NewClass newClass, P p) {
+        J.NewClass newClass1 = super.visitNewClass(newClass, p);
+        if (newClass1.getArgs() != null) {
+            newClass1 = newClass1.withArgs(spaceBefore(newClass1.getArgs(), style.getBeforeParentheses().isMethodCall()));
+        }
+        if (newClass1.getArgs() != null) {
+            JRightPadded<Expression> firstArg = newClass1.getArgs().getElem().iterator().next();
+            if (firstArg.getElem() instanceof J.Empty) {
+                if (style.getWithin().isEmptyMethodCallParentheses()) {
+                    if (StringUtils.isNullOrEmpty(firstArg.getElem().getPrefix().getWhitespace())) {
+                        newClass1 = newClass1.withArgs(
+                                newClass1.getArgs().withElem(
+                                        ListUtils.mapFirst(newClass1.getArgs().getElem(),
+                                                e -> e.withElem(
+                                                        e.getElem().withPrefix(
+                                                                e.getElem().getPrefix().withWhitespace(" ")
+                                                        )
+                                                )
+                                        )
+                                )
+                        );
+                    }
+                } else {
+                    if (firstArg.getElem().getPrefix().getWhitespace().equals(" ")) {
+                        newClass1 = newClass1.withArgs(
+                                newClass1.getArgs().withElem(
+                                        ListUtils.mapFirst(newClass1.getArgs().getElem(),
+                                                e -> e.withElem(
+                                                        e.getElem().withPrefix(
+                                                                e.getElem().getPrefix().withWhitespace("")
+                                                        )
+                                                )
+                                        )
+                                )
+                        );
+                    }
+                }
+            } else {
+                if (style.getWithin().isMethodCallParentheses()) {
+                    if (StringUtils.isNullOrEmpty(firstArg.getElem().getPrefix().getWhitespace())) {
+                        newClass1 = newClass1.withArgs(
+                                newClass1.getArgs().withElem(
+                                        ListUtils.mapFirst(newClass1.getArgs().getElem(),
+                                                e -> e.withElem(
+                                                        e.getElem().withPrefix(
+                                                                e.getElem().getPrefix().withWhitespace(" ")
+                                                        )
+                                                )
+                                        )
+                                )
+                        );
+                    }
+                    @SuppressWarnings("ConstantConditions")
+                    JRightPadded<Expression> lastArg = newClass1.getArgs().getElem().get(newClass1.getArgs().getElem().size() - 1);
+                    if (StringUtils.isNullOrEmpty(lastArg.getAfter().getWhitespace())) {
+                        newClass1 = newClass1.withArgs(
+                                newClass1.getArgs().withElem(
+                                        ListUtils.mapLast(newClass1.getArgs().getElem(),
+                                                e -> e.withAfter(
+                                                        e.getAfter().withWhitespace(" ")
+                                                )
+                                        )
+                                )
+                        );
+                    }
+                } else {
+                    if (firstArg.getElem().getPrefix().getWhitespace().equals(" ")) {
+                        newClass1 = newClass1.withArgs(
+                                newClass1.getArgs().withElem(
+                                        ListUtils.mapFirst(newClass1.getArgs().getElem(),
+                                                e -> e.withElem(
+                                                        e.getElem().withPrefix(
+                                                                e.getElem().getPrefix().withWhitespace("")
+                                                        )
+                                                )
+                                        )
+                                )
+                        );
+                    }
+                    @SuppressWarnings("ConstantConditions")
+                    JRightPadded<Expression> lastArg = newClass1.getArgs().getElem().get(newClass1.getArgs().getElem().size() - 1);
+                    if (lastArg.getAfter().getWhitespace().equals(" ")) {
+                        newClass1 = newClass1.withArgs(
+                                newClass1.getArgs().withElem(
+                                        ListUtils.mapLast(newClass1.getArgs().getElem(),
+                                                e -> e.withAfter(
+                                                        e.getAfter().withWhitespace("")
+                                                )
+                                        )
+                                )
+                        );
+                    }
+                }
+            }
+        }
+        return newClass1;
     }
 
     @Override
@@ -115,6 +385,49 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         J.If anIf = super.visitIf(iff, p);
         anIf = anIf.withIfCondition(spaceBefore(anIf.getIfCondition(), style.getBeforeParentheses().isIfParentheses()));
         anIf = anIf.withThenPart(spaceBeforeRightPaddedElement(anIf.getThenPart(), style.getBeforeLeftBrace().isIfLeftBrace()));
+        if (style.getWithin().isIfParentheses()) {
+            if (StringUtils.isNullOrEmpty(anIf.getIfCondition().getTree().getElem().getPrefix().getWhitespace())) {
+                anIf = anIf.withIfCondition(
+                        anIf.getIfCondition().withTree(
+                                anIf.getIfCondition().getTree().withElem(
+                                        anIf.getIfCondition().getTree().getElem().withPrefix(
+                                                anIf.getIfCondition().getTree().getElem().getPrefix().withWhitespace(" ")
+                                        )
+                                )
+                        )
+                );
+            }
+            if (StringUtils.isNullOrEmpty(anIf.getIfCondition().getTree().getAfter().getWhitespace())) {
+                anIf = anIf.withIfCondition(
+                        anIf.getIfCondition().withTree(
+                                anIf.getIfCondition().getTree().withAfter(
+                                        anIf.getIfCondition().getTree().getAfter().withWhitespace(" ")
+                                )
+                        )
+                );
+            }
+        } else {
+            if (anIf.getIfCondition().getTree().getElem().getPrefix().getWhitespace().equals(" ")) {
+                anIf = anIf.withIfCondition(
+                        anIf.getIfCondition().withTree(
+                                anIf.getIfCondition().getTree().withElem(
+                                        anIf.getIfCondition().getTree().getElem().withPrefix(
+                                                anIf.getIfCondition().getTree().getElem().getPrefix().withWhitespace("")
+                                        )
+                                )
+                        )
+                );
+            }
+            if (anIf.getIfCondition().getTree().getAfter().getWhitespace().equals(" ")) {
+                anIf = anIf.withIfCondition(
+                        anIf.getIfCondition().withTree(
+                                anIf.getIfCondition().getTree().withAfter(
+                                        anIf.getIfCondition().getTree().getAfter().withWhitespace("")
+                                )
+                        )
+                );
+            }
+        }
         return anIf;
     }
 
@@ -131,6 +444,7 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         J.ForLoop fl = super.visitForLoop(forLoop, p);
         fl = fl.withControl(spaceBefore(fl.getControl(), style.getBeforeParentheses().isForParentheses()));
         fl = fl.withBody(spaceBeforeRightPaddedElement(fl.getBody(), style.getBeforeLeftBrace().isForLeftBrace()));
+
         return fl;
     }
 
@@ -400,6 +714,92 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
             );
         }
         l = l.withBody(spaceBefore(l.getBody(), style.getAroundOperators().isLambdaArrow()));
+        JRightPadded<J> firstParam = l.getParameters().getParams().iterator().next();
+        if (firstParam.getElem() instanceof J.Empty) {
+            if (style.getWithin().isEmptyMethodDeclarationParentheses()) {
+                if (StringUtils.isNullOrEmpty(firstParam.getElem().getPrefix().getWhitespace())) {
+                    l = l.withParameters(
+                            l.getParameters().withParams(
+                                    ListUtils.mapFirst(l.getParameters().getParams(),
+                                            param -> param.withElem(
+                                                    param.getElem().withPrefix(
+                                                            param.getElem().getPrefix().withWhitespace(" ")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+            } else {
+                if (firstParam.getElem().getPrefix().getWhitespace().equals(" ")) {
+                    l = l.withParameters(
+                            l.getParameters().withParams(
+                                    ListUtils.mapFirst(l.getParameters().getParams(),
+                                            param -> param.withElem(
+                                                    param.getElem().withPrefix(
+                                                            param.getElem().getPrefix().withWhitespace("")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        } else {
+            if (style.getWithin().isMethodDeclarationParentheses()) {
+                if (StringUtils.isNullOrEmpty(firstParam.getElem().getPrefix().getWhitespace())) {
+                    l = l.withParameters(
+                            l.getParameters().withParams(
+                                    ListUtils.mapFirst(l.getParameters().getParams(),
+                                            param -> param.withElem(
+                                                    param.getElem().withPrefix(
+                                                            param.getElem().getPrefix().withWhitespace(" ")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+                JRightPadded<J> lastParam = l.getParameters().getParams().get(l.getParameters().getParams().size() - 1);
+                if (StringUtils.isNullOrEmpty(lastParam.getAfter().getWhitespace())) {
+                    l = l.withParameters(
+                            l.getParameters().withParams(
+                                    ListUtils.mapLast(l.getParameters().getParams(),
+                                            param -> param.withAfter(
+                                                    param.getAfter().withWhitespace(" ")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            } else {
+                if (firstParam.getElem().getPrefix().getWhitespace().equals(" ")) {
+                    l = l.withParameters(
+                            l.getParameters().withParams(
+                                    ListUtils.mapFirst(l.getParameters().getParams(),
+                                            param -> param.withElem(
+                                                    param.getElem().withPrefix(
+                                                            param.getElem().getPrefix().withWhitespace("")
+                                                    )
+                                            )
+                                    )
+                            )
+                    );
+                }
+                JRightPadded<J> lastParam = l.getParameters().getParams().get(l.getParameters().getParams().size() - 1);
+                if (lastParam.getAfter().getWhitespace().equals(" ")) {
+                    l = l.withParameters(
+                            l.getParameters().withParams(
+                                    ListUtils.mapLast(l.getParameters().getParams(),
+                                            param -> param.withAfter(
+                                                    param.getAfter().withWhitespace("")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        }
         return l;
     }
 
@@ -435,37 +835,30 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         if (newArray1.getInitializer() != null) {
             JContainer<Expression> initializer = newArray1.getInitializer();
             if (!initializer.getElem().isEmpty()) {
-                boolean useSpaceWithinArrayInitializerBraces = style.getWithin().isArrayInitializerBraces();
-                if (useSpaceWithinArrayInitializerBraces) {
-                    if (!(initializer.getElem().iterator().next().getElem() instanceof J.Empty)) {
+                if (initializer.getElem().iterator().next().getElem() instanceof J.Empty) {
+                    if (style.getWithin().isEmptyArrayInitializerBraces()) {
+                        if (StringUtils.isNullOrEmpty(initializer.getElem().iterator().next().getElem().getPrefix().getWhitespace())) {
+                            initializer = initializer.withElem(ListUtils.mapFirst(initializer.getElem(), e -> e.withElem(e.getElem().withPrefix(e.getElem().getPrefix().withWhitespace(" ")))));
+                        }
+                    } else {
+                        if (initializer.getElem().iterator().next().getElem().getPrefix().getWhitespace().equals(" ")) {
+                            initializer = initializer.withElem(ListUtils.mapFirst(initializer.getElem(), e -> e.withElem(e.getElem().withPrefix(e.getElem().getPrefix().withWhitespace("")))));
+                        }
+                    }
+                } else {
+                    if (style.getWithin().isArrayInitializerBraces()) {
                         if (StringUtils.isNullOrEmpty(initializer.getElem().iterator().next().getElem().getPrefix().getWhitespace())) {
                             initializer = initializer.withElem(ListUtils.mapFirst(initializer.getElem(), e -> e.withElem(e.getElem().withPrefix(e.getElem().getPrefix().withWhitespace(" ")))));
                         }
                         if (StringUtils.isNullOrEmpty(initializer.getElem().get(initializer.getElem().size() - 1).getAfter().getWhitespace())) {
                             initializer = initializer.withElem(ListUtils.mapLast(initializer.getElem(), e -> e.withAfter(e.getAfter().withWhitespace(" "))));
                         }
-                    }
-                } else {
-                    if (!(initializer.getElem().iterator().next().getElem() instanceof J.Empty)) {
+                    } else {
                         if (initializer.getElem().iterator().next().getElem().getPrefix().getWhitespace().equals(" ")) {
                             initializer = initializer.withElem(ListUtils.mapFirst(initializer.getElem(), e -> e.withElem(e.getElem().withPrefix(e.getElem().getPrefix().withWhitespace("")))));
                         }
                         if (initializer.getElem().get(initializer.getElem().size() - 1).getAfter().getWhitespace().equals(" ")) {
                             initializer = initializer.withElem(ListUtils.mapLast(initializer.getElem(), e -> e.withAfter(e.getAfter().withWhitespace(""))));
-                        }
-                    }
-                }
-                boolean useSpaceWithinEmptyArrayInitializerBraces = style.getWithin().isEmptyArrayInitializerBraces();
-                if (useSpaceWithinEmptyArrayInitializerBraces) {
-                    if ((initializer.getElem().iterator().next().getElem() instanceof J.Empty)) {
-                        if (StringUtils.isNullOrEmpty(initializer.getElem().iterator().next().getElem().getPrefix().getWhitespace())) {
-                            initializer = initializer.withElem(ListUtils.mapFirst(initializer.getElem(), e -> e.withElem(e.getElem().withPrefix(e.getElem().getPrefix().withWhitespace(" ")))));
-                        }
-                    }
-                } else {
-                    if ((initializer.getElem().iterator().next().getElem() instanceof J.Empty)) {
-                        if (initializer.getElem().iterator().next().getElem().getPrefix().getWhitespace().equals(" ")) {
-                            initializer = initializer.withElem(ListUtils.mapFirst(initializer.getElem(), e -> e.withElem(e.getElem().withPrefix(e.getElem().getPrefix().withWhitespace("")))));
                         }
                     }
                 }
