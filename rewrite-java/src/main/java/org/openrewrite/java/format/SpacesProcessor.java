@@ -444,7 +444,59 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         J.ForLoop fl = super.visitForLoop(forLoop, p);
         fl = fl.withControl(spaceBefore(fl.getControl(), style.getBeforeParentheses().isForParentheses()));
         fl = fl.withBody(spaceBeforeRightPaddedElement(fl.getBody(), style.getBeforeLeftBrace().isForLeftBrace()));
-
+        if (style.getWithin().isForParentheses()) {
+            if (StringUtils.isNullOrEmpty(fl.getControl().getInit().getElem().getPrefix().getWhitespace())) {
+                fl = fl.withControl(
+                        fl.getControl().withInit(
+                                fl.getControl().getInit().withElem(
+                                        fl.getControl().getInit().getElem().withPrefix(
+                                                fl.getControl().getInit().getElem().getPrefix().withWhitespace(" ")
+                                        )
+                                )
+                        )
+                );
+            }
+            if (!(fl.getControl().getUpdate().iterator().next().getElem() instanceof J.Empty)) {
+                if (StringUtils.isNullOrEmpty(fl.getControl().getUpdate().get(fl.getControl().getUpdate().size() - 1)
+                        .getAfter().getWhitespace())) {
+                    fl = fl.withControl(
+                            fl.getControl().withUpdate(
+                                    ListUtils.mapLast(fl.getControl().getUpdate(),
+                                            u -> u.withAfter(
+                                                    u.getAfter().withWhitespace(" ")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        } else {
+            if (fl.getControl().getInit().getElem().getPrefix().getWhitespace().equals(" ")) {
+                fl = fl.withControl(
+                        fl.getControl().withInit(
+                                fl.getControl().getInit().withElem(
+                                        fl.getControl().getInit().getElem().withPrefix(
+                                                fl.getControl().getInit().getElem().getPrefix().withWhitespace("")
+                                        )
+                                )
+                        )
+                );
+            }
+            if (!(fl.getControl().getUpdate().iterator().next().getElem() instanceof J.Empty)) {
+                if (fl.getControl().getUpdate().get(fl.getControl().getUpdate().size() - 1).getAfter().getWhitespace()
+                        .equals(" ")) {
+                    fl = fl.withControl(
+                            fl.getControl().withUpdate(
+                                    ListUtils.mapLast(fl.getControl().getUpdate(),
+                                            u -> u.withAfter(
+                                                    u.getAfter().withWhitespace("")
+                                            )
+                                    )
+                            )
+                    );
+                }
+            }
+        }
         return fl;
     }
 
@@ -453,6 +505,49 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         J.ForEachLoop forEachLoop = super.visitForEachLoop(forLoop, p);
         forEachLoop = forEachLoop.withControl(spaceBefore(forEachLoop.getControl(), style.getBeforeParentheses().isForParentheses()));
         forEachLoop = forEachLoop.withBody(spaceBeforeRightPaddedElement(forEachLoop.getBody(), style.getBeforeLeftBrace().isForLeftBrace()));
+        if (style.getWithin().isForParentheses()) {
+            if (StringUtils.isNullOrEmpty(forEachLoop.getControl().getVariable().getElem().getPrefix().getWhitespace())) {
+                forEachLoop = forEachLoop.withControl(
+                        forEachLoop.getControl().withVariable(
+                                forEachLoop.getControl().getVariable().withElem(
+                                        forEachLoop.getControl().getVariable().getElem().withPrefix(
+                                                forEachLoop.getControl().getVariable().getElem().getPrefix().withWhitespace(" ")
+                                        )
+                                )
+                        )
+                );
+            }
+            if (StringUtils.isNullOrEmpty(forEachLoop.getControl().getIterable().getAfter().getWhitespace())) {
+                forEachLoop = forEachLoop.withControl(
+                        forEachLoop.getControl().withIterable(
+                                forEachLoop.getControl().getIterable().withAfter(
+                                        forEachLoop.getControl().getIterable().getAfter().withWhitespace(" ")
+                                )
+                        )
+                );
+            }
+        } else {
+            if (forEachLoop.getControl().getVariable().getElem().getPrefix().getWhitespace().equals(" ")) {
+                forEachLoop = forEachLoop.withControl(
+                        forEachLoop.getControl().withVariable(
+                                forEachLoop.getControl().getVariable().withElem(
+                                        forEachLoop.getControl().getVariable().getElem().withPrefix(
+                                                forEachLoop.getControl().getVariable().getElem().getPrefix().withWhitespace("")
+                                        )
+                                )
+                        )
+                );
+            }
+            if (forEachLoop.getControl().getIterable().getAfter().getWhitespace().equals(" ")) {
+                forEachLoop = forEachLoop.withControl(
+                        forEachLoop.getControl().withIterable(
+                                forEachLoop.getControl().getIterable().withAfter(
+                                        forEachLoop.getControl().getIterable().getAfter().withWhitespace("")
+                                )
+                        )
+                );
+            }
+        }
         return forEachLoop;
     }
 
@@ -461,6 +556,49 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         J.WhileLoop wl = super.visitWhileLoop(whileLoop, p);
         wl = wl.withCondition(spaceBefore(wl.getCondition(), style.getBeforeParentheses().isWhileParentheses()));
         wl = wl.withBody(spaceBeforeRightPaddedElement(wl.getBody(), style.getBeforeLeftBrace().isWhileLeftBrace()));
+        if (style.getWithin().isWhileParentheses()) {
+            if (StringUtils.isNullOrEmpty(wl.getCondition().getTree().getElem().getPrefix().getWhitespace())) {
+                wl = wl.withCondition(
+                        wl.getCondition().withTree(
+                            wl.getCondition().getTree().withElem(
+                                    wl.getCondition().getTree().getElem().withPrefix(
+                                            wl.getCondition().getTree().getElem().getPrefix().withWhitespace(" ")
+                                    )
+                            )
+                        )
+                );
+            }
+            if (StringUtils.isNullOrEmpty(wl.getCondition().getTree().getAfter().getWhitespace())) {
+                wl = wl.withCondition(
+                        wl.getCondition().withTree(
+                                wl.getCondition().getTree().withAfter(
+                                        wl.getCondition().getTree().getAfter().withWhitespace(" ")
+                                )
+                        )
+                );
+            }
+        } else {
+            if (wl.getCondition().getTree().getElem().getPrefix().getWhitespace().equals(" ")) {
+                wl = wl.withCondition(
+                        wl.getCondition().withTree(
+                                wl.getCondition().getTree().withElem(
+                                        wl.getCondition().getTree().getElem().withPrefix(
+                                                wl.getCondition().getTree().getElem().getPrefix().withWhitespace("")
+                                        )
+                                )
+                        )
+                );
+            }
+            if (wl.getCondition().getTree().getAfter().getWhitespace().equals(" ")) {
+                wl = wl.withCondition(
+                        wl.getCondition().withTree(
+                                wl.getCondition().getTree().withAfter(
+                                        wl.getCondition().getTree().getAfter().withWhitespace("")
+                                )
+                        )
+                );
+            }
+        }
         return wl;
     }
 
@@ -470,6 +608,57 @@ public class SpacesProcessor<P> extends JavaIsoProcessor<P> {
         dwl = dwl.withWhileCondition(spaceBefore(dwl.getWhileCondition(), style.getBeforeKeywords().isWhileKeyword()));
         dwl = dwl.withWhileCondition(spaceBeforeLeftPaddedElement(dwl.getWhileCondition(), style.getBeforeParentheses().isWhileParentheses()));
         dwl = dwl.withBody(spaceBeforeRightPaddedElement(dwl.getBody(), style.getBeforeLeftBrace().isDoLeftBrace()));
+        if (style.getWithin().isWhileParentheses()) {
+            if (StringUtils.isNullOrEmpty(dwl.getWhileCondition().getElem().getTree().getElem().getPrefix().getWhitespace())) {
+                dwl = dwl.withWhileCondition(
+                        dwl.getWhileCondition().withElem(
+                                dwl.getWhileCondition().getElem().withTree(
+                                        dwl.getWhileCondition().getElem().getTree().withElem(
+                                                dwl.getWhileCondition().getElem().getTree().getElem().withPrefix(
+                                                        dwl.getWhileCondition().getElem().getTree().getElem().getPrefix().withWhitespace(" ")
+                                                )
+                                        )
+                                )
+                        )
+                );
+            }
+            if (StringUtils.isNullOrEmpty(dwl.getWhileCondition().getElem().getTree().getAfter().getWhitespace())) {
+                dwl = dwl.withWhileCondition(
+                        dwl.getWhileCondition().withElem(
+                                dwl.getWhileCondition().getElem().withTree(
+                                        dwl.getWhileCondition().getElem().getTree().withAfter(
+                                                dwl.getWhileCondition().getElem().getTree().getAfter().withWhitespace(" ")
+                                        )
+                                )
+                        )
+                );
+            }
+        } else {
+            if (dwl.getWhileCondition().getElem().getTree().getElem().getPrefix().getWhitespace().equals(" ")) {
+                dwl = dwl.withWhileCondition(
+                        dwl.getWhileCondition().withElem(
+                                dwl.getWhileCondition().getElem().withTree(
+                                        dwl.getWhileCondition().getElem().getTree().withElem(
+                                                dwl.getWhileCondition().getElem().getTree().getElem().withPrefix(
+                                                        dwl.getWhileCondition().getElem().getTree().getElem().getPrefix().withWhitespace("")
+                                                )
+                                        )
+                                )
+                        )
+                );
+            }
+            if (dwl.getWhileCondition().getElem().getTree().getAfter().getWhitespace().equals(" ")) {
+                dwl = dwl.withWhileCondition(
+                        dwl.getWhileCondition().withElem(
+                                dwl.getWhileCondition().getElem().withTree(
+                                        dwl.getWhileCondition().getElem().getTree().withAfter(
+                                                dwl.getWhileCondition().getElem().getTree().getAfter().withWhitespace("")
+                                        )
+                                )
+                        )
+                );
+            }
+        }
         return dwl;
     }
 

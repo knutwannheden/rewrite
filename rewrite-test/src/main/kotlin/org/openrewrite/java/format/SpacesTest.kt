@@ -65,6 +65,8 @@ interface SpacesTest : RecipeTest {
                             for (int i = 0; i < 10 || j > 0; i++) {
                                 j += i;
                             }
+                            for (; ; ) {
+                            }
                             int[] arr = new int[]{1, 3, 5, 6, 7, 87, 1213, 2};
                             for (int e : arr) {
                                 j += e;
@@ -191,6 +193,8 @@ interface SpacesTest : RecipeTest {
                     isMethodCallParentheses = true
                     isEmptyMethodCallParentheses = true
                     isIfParentheses = true
+                    isForParentheses = true
+                    isWhileParentheses = true
                 }
             })).build(),
             dependsOn = dependsOn,
@@ -211,22 +215,24 @@ interface SpacesTest : RecipeTest {
                             foo ( 2 );
                         }
                         int j=0;
-                        for(int i=0; i<10||j>0; i ++){
+                        for( int i=0; i<10||j>0; i ++ ){
                             j+=i;
                         }
+                        for( ; ; ){
+                        }
                         int[] arr=new int[] { 1, 3, 5, 6, 7, 87, 1213, 2 };
-                        for(int e : arr){
+                        for( int e : arr ){
                             j+=e;
                         }
                         int[] arr2=new int[] { };
                         int elem=arr[ j ];
                         int x=0;
-                        while(j<1000&&x>0){
+                        while( j<1000&&x>0 ){
                             j=j+1;
                         }
                         do{
                             j=j+1;
-                        }while(j<2000);
+                        }while( j<2000 );
                         switch(j){
                             case 1:
                             default:
