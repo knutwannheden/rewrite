@@ -33,7 +33,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Value
-@EqualsAndHashCode(callSuper = false)
+@EqualsAndHashCode(callSuper = true)
 public class MoveContentToFile extends Recipe {
     @Option(
             displayName = "Content path",

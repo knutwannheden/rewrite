@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.openrewrite.Tree.randomId;
 import static org.openrewrite.java.style.ImportLayoutStyle.isPackageAlwaysFolded;
 
-@EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(callSuper = true, onlyExplicitlyIncluded = true)
 public class RemoveImport<P> extends JavaIsoVisitor<P> {
     @EqualsAndHashCode.Include
     private final String type;

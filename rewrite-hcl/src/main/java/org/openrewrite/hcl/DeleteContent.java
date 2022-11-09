@@ -23,7 +23,7 @@ import org.openrewrite.Recipe;
 import org.openrewrite.hcl.tree.BodyContent;
 
 @Value
-@EqualsAndHashCode(callSuper = false)
+@EqualsAndHashCode(callSuper = true)
 public class DeleteContent extends Recipe {
     @Option(
             displayName = "Content path",

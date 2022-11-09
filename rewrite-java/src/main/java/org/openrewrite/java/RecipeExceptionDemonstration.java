@@ -26,7 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Value
-@EqualsAndHashCode(callSuper = false)
+@EqualsAndHashCode(callSuper = true)
 public class RecipeExceptionDemonstration extends Recipe {
     @Option(displayName = "Throw on matching method pattern",
             required = false,

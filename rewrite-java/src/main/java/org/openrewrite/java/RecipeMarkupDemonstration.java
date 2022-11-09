@@ -27,7 +27,7 @@ import org.openrewrite.marker.Markup;
 import java.util.List;
 
 @Value
-@EqualsAndHashCode(callSuper = false)
+@EqualsAndHashCode(callSuper = true)
 public class RecipeMarkupDemonstration extends Recipe {
 
     @Option(displayName = "Level",

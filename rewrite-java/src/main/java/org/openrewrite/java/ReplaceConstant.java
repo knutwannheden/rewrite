@@ -25,7 +25,7 @@ import org.openrewrite.java.tree.JavaType.Primitive;
 import org.openrewrite.marker.Markers;
 
 @Value
-@EqualsAndHashCode(callSuper = false)
+@EqualsAndHashCode(callSuper = true)
 public class ReplaceConstant extends Recipe {
     @Option(displayName = "Owning type of the constant",
             description = "The target type in which the constant to be replaced is defined.",

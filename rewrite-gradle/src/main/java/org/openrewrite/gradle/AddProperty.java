@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static java.util.Collections.singletonList;
 
 @Value
-@EqualsAndHashCode(callSuper = false)
+@EqualsAndHashCode(callSuper = true)
 public class AddProperty extends Recipe {
 
     @Option(displayName = "Property name",
