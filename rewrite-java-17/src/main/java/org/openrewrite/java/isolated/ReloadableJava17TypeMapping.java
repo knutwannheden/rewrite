@@ -54,10 +54,6 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
         }
 
         String signature = signatureBuilder.signature(type);
-        JavaType existing = typeCache.get(signature);
-        if (existing != null) {
-            return existing;
-        }
 
         if (type instanceof Type.ClassType) {
             return classType((Type.ClassType) type, signature);
@@ -79,94 +75,93 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
     }
 
     private JavaType array(Type type, String signature) {
-        JavaType.Array arr = new JavaType.Array(null, null);
-        typeCache.put(signature, arr);
-        arr.unsafeSet(type(((Type.ArrayType) type).elemtype));
-        return arr;
+        return typeCache.computeIfAbsent(signature, () -> new JavaType.Array(null, null), arr -> {
+            arr.unsafeSet(type(((Type.ArrayType) type).elemtype));
+            return arr;
+        });
     }
 
     private JavaType.GenericTypeVariable generic(Type.WildcardType wildcard, String signature) {
-        JavaType.GenericTypeVariable gtv = new JavaType.GenericTypeVariable(null, "?", INVARIANT, null);
-        typeCache.put(signature, gtv);
+        return typeCache.computeIfAbsent(signature, () -> {
+            return new JavaType.GenericTypeVariable(null, "?", INVARIANT, null);
+        }, gtv -> {
+            JavaType.GenericTypeVariable.Variance variance;
+            List<JavaType> bounds;
 
-        JavaType.GenericTypeVariable.Variance variance;
-        List<JavaType> bounds;
+            switch (wildcard.kind) {
+                case SUPER:
+                    variance = CONTRAVARIANT;
+                    bounds = singletonList(type(wildcard.getSuperBound()));
+                    break;
+                case EXTENDS:
+                    variance = COVARIANT;
+                    bounds = singletonList(type(wildcard.getExtendsBound()));
+                    break;
+                case UNBOUND:
+                default:
+                    variance = INVARIANT;
+                    bounds = null;
+                    break;
+            }
 
-        switch (wildcard.kind) {
-            case SUPER:
-                variance = CONTRAVARIANT;
-                bounds = singletonList(type(wildcard.getSuperBound()));
-                break;
-            case EXTENDS:
-                variance = COVARIANT;
-                bounds = singletonList(type(wildcard.getExtendsBound()));
-                break;
-            case UNBOUND:
-            default:
-                variance = INVARIANT;
+            if (bounds != null && bounds.get(0) instanceof JavaType.FullyQualified && "java.lang.Object".equals(((JavaType.FullyQualified) bounds.get(0))
+                    .getFullyQualifiedName())) {
                 bounds = null;
-                break;
-        }
+            }
 
-        if (bounds != null && bounds.get(0) instanceof JavaType.FullyQualified && "java.lang.Object".equals(((JavaType.FullyQualified) bounds.get(0))
-                .getFullyQualifiedName())) {
-            bounds = null;
-        }
-
-        gtv.unsafeSet(variance, bounds);
-        return gtv;
+            gtv.unsafeSet(variance, bounds);
+            return gtv;
+        });
     }
 
     private JavaType generic(Type.TypeVar type, String signature) {
-        String name = type.tsym.name.toString();
-        JavaType.GenericTypeVariable gtv = new JavaType.GenericTypeVariable(null,
-                name, INVARIANT, null);
-        typeCache.put(signature, gtv);
+        return typeCache.computeIfAbsent(signature, () -> {
+                String name = type.tsym.name.toString();
+                return new JavaType.GenericTypeVariable(null,
+                        name, INVARIANT, null);
+            }, gtv -> {
+            List<JavaType> bounds = null;
+            if (type.getUpperBound() instanceof Type.IntersectionClassType) {
+                Type.IntersectionClassType intersectionBound = (Type.IntersectionClassType) type.getUpperBound();
+                boolean isIntersectionSuperType = !intersectionBound.supertype_field.tsym.getQualifiedName().toString().equals("java.lang.Object");
+                bounds = new ArrayList<>((isIntersectionSuperType ? 1 : 0) + intersectionBound.interfaces_field.length());
 
-        List<JavaType> bounds = null;
-        if (type.getUpperBound() instanceof Type.IntersectionClassType) {
-            Type.IntersectionClassType intersectionBound = (Type.IntersectionClassType) type.getUpperBound();
-            boolean isIntersectionSuperType = !intersectionBound.supertype_field.tsym.getQualifiedName().toString().equals("java.lang.Object");
-            bounds = new ArrayList<>((isIntersectionSuperType ? 1 : 0) + intersectionBound.interfaces_field.length());
+                if (isIntersectionSuperType) {
+                    bounds.add(type(intersectionBound.supertype_field));
+                }
+                for (Type bound : intersectionBound.interfaces_field) {
+                    bounds.add(type(bound));
+                }
+            } else if (type.getUpperBound() != null) {
+                JavaType mappedBound = type(type.getUpperBound());
+                if (!(mappedBound instanceof JavaType.FullyQualified) || !"java.lang.Object".equals(((JavaType.FullyQualified) mappedBound).getFullyQualifiedName())) {
+                    bounds = singletonList(mappedBound);
+                }
+            }
 
-            if (isIntersectionSuperType) {
-                bounds.add(type(intersectionBound.supertype_field));
-            }
-            for (Type bound : intersectionBound.interfaces_field) {
-                bounds.add(type(bound));
-            }
-        } else if (type.getUpperBound() != null) {
-            JavaType mappedBound = type(type.getUpperBound());
-            if (!(mappedBound instanceof JavaType.FullyQualified) || !"java.lang.Object".equals(((JavaType.FullyQualified) mappedBound).getFullyQualifiedName())) {
-                bounds = singletonList(mappedBound);
-            }
-        }
-
-        gtv.unsafeSet(bounds == null ? INVARIANT : COVARIANT, bounds);
-        return gtv;
+            gtv.unsafeSet(bounds == null ? INVARIANT : COVARIANT, bounds);
+            return gtv;
+        });
     }
 
     private JavaType.FullyQualified classType(Type.ClassType classType, String signature) {
         Symbol.ClassSymbol sym = (Symbol.ClassSymbol) classType.tsym;
         Type.ClassType symType = (Type.ClassType) sym.type;
 
-        JavaType.FullyQualified fq = typeCache.get(sym.flatName().toString());
-        JavaType.Class clazz = (JavaType.Class) (fq instanceof JavaType.Parameterized ? ((JavaType.Parameterized) fq).getType() : fq);
-        if (clazz == null) {
-            if (!sym.completer.isTerminal()) {
-                completeClassSymbol(sym);
-            }
+        String signature1 = sym.flatName().toString();
+        JavaType.FullyQualified fq = typeCache.computeIfAbsent(signature1, () -> {
+                if (!sym.completer.isTerminal()) {
+                    completeClassSymbol(sym);
+                }
 
-            clazz = new JavaType.Class(
-                    null,
-                    sym.flags_field,
-                    sym.flatName().toString(),
-                    getKind(sym),
-                    null, null, null, null, null, null, null
-            );
-
-            typeCache.put(sym.flatName().toString(), clazz);
-
+                return new JavaType.Class(
+                        null,
+                        sym.flags_field,
+                        signature1,
+                        getKind(sym),
+                        null, null, null, null, null, null, null
+                );
+            }, clazz -> {
             JavaType.FullyQualified supertype = TypeUtils.asFullyQualified(type(symType.supertype_field));
 
             JavaType.FullyQualified owner = null;
@@ -193,7 +188,7 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
                     if (elem instanceof Symbol.VarSymbol &&
                             (elem.flags_field & (Flags.SYNTHETIC | Flags.BRIDGE | Flags.HYPOTHETICAL |
                                     Flags.GENERATEDCONSTR | Flags.ANONCONSTR)) == 0) {
-                        if (sym.flatName().toString().equals("java.lang.String") && sym.name.toString().equals("serialPersistentFields")) {
+                        if (signature1.equals("java.lang.String") && sym.name.toString().equals("serialPersistentFields")) {
                             // there is a "serialPersistentFields" member within the String class which is used in normal Java
                             // serialization to customize how the String field is serialized. This field is tripping up Jackson
                             // serialization and is intentionally filtered to prevent errors.
@@ -225,22 +220,23 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
                 }
             }
             clazz.unsafeSet(typeParameters, supertype, owner, listAnnotations(sym), interfaces, fields, methods);
-        }
+            return clazz;
+        });
+
+        JavaType.Class clazz = (JavaType.Class) (fq instanceof JavaType.Parameterized ? ((JavaType.Parameterized) fq).getType() : fq);
 
         if (classType.typarams_field != null && classType.typarams_field.length() > 0) {
-            JavaType.Parameterized pt = typeCache.get(signature);
-            if (pt == null) {
-                pt = new JavaType.Parameterized(null, null, null);
-                typeCache.put(signature, pt);
-
+            return typeCache.computeIfAbsent(signature, () -> {
+                    return new JavaType.Parameterized(null, null, null);
+                }, pt -> {
                 List<JavaType> typeParameters = new ArrayList<>(classType.typarams_field.length());
                 for (Type tParam : classType.typarams_field) {
                     typeParameters.add(type(tParam));
                 }
 
                 pt.unsafeSet(clazz, typeParameters);
-            }
-            return pt;
+                return pt;
+            });
         }
         return clazz;
     }
@@ -329,36 +325,30 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
         }
 
         String signature = signatureBuilder.variableSignature(symbol);
-        JavaType.Variable existing = typeCache.get(signature);
-        if (existing != null) {
-            return existing;
-        }
+        return typeCache.computeIfAbsent(signature, () -> new JavaType.Variable(
+                        null,
+                        symbol.flags_field,
+                        symbol.name.toString(),
+                        null, null, null),
+                variable -> {
+                    JavaType resolvedOwner = owner;
+                    if (owner == null) {
+                        Type type = symbol.owner.type;
+                        Symbol sym = symbol.owner;
 
-        JavaType.Variable variable = new JavaType.Variable(
-                null,
-                symbol.flags_field,
-                symbol.name.toString(),
-                null, null, null);
+                        if (sym.type instanceof Type.ForAll) {
+                            type = ((Type.ForAll) type).qtype;
+                        }
 
-        typeCache.put(signature, variable);
+                        resolvedOwner = type instanceof Type.MethodType ?
+                                methodInvocationType(type, sym) :
+                                type(type);
+                        assert resolvedOwner != null;
+                    }
 
-        JavaType resolvedOwner = owner;
-        if (owner == null) {
-            Type type = symbol.owner.type;
-            Symbol sym = symbol.owner;
-
-            if (sym.type instanceof Type.ForAll) {
-                type = ((Type.ForAll) type).qtype;
-            }
-
-            resolvedOwner = type instanceof Type.MethodType ?
-                    methodInvocationType(type, sym) :
-                    type(type);
-            assert resolvedOwner != null;
-        }
-
-        variable.unsafeSet(resolvedOwner, type(symbol.type), listAnnotations(symbol));
-        return variable;
+                    variable.unsafeSet(resolvedOwner, type(symbol.type), listAnnotations(symbol));
+                    return variable;
+                });
     }
 
     /**
@@ -383,84 +373,80 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
         }
 
         String signature = signatureBuilder.methodSignature(selectType, methodSymbol);
-        JavaType.Method existing = typeCache.get(signature);
-        if (existing != null) {
-            return existing;
-        }
-
-        List<String> paramNames = null;
-        if (!methodSymbol.params().isEmpty()) {
-            paramNames = new ArrayList<>(methodSymbol.params().size());
-            for (Symbol.VarSymbol p : methodSymbol.params()) {
-                String s = p.name.toString();
-                paramNames.add(s);
-            }
-        }
-
-        JavaType.Method method = new JavaType.Method(
-                null,
-                methodSymbol.flags_field,
-                null,
-                methodSymbol.isConstructor() ? "<constructor>" : methodSymbol.getSimpleName().toString(),
-                null,
-                paramNames,
-                null, null, null, null
-        );
-        typeCache.put(signature, method);
-
-        JavaType returnType = null;
-        List<JavaType> parameterTypes = null;
-        List<JavaType.FullyQualified> exceptionTypes = null;
-
-        if (selectType instanceof Type.MethodType) {
-            Type.MethodType methodType = (Type.MethodType) selectType;
-
-            if (!methodType.argtypes.isEmpty()) {
-                parameterTypes = new ArrayList<>(methodType.argtypes.size());
-                for (com.sun.tools.javac.code.Type argtype : methodType.argtypes) {
-                    if (argtype != null) {
-                        JavaType javaType = type(argtype);
-                        parameterTypes.add(javaType);
-                    }
+        return typeCache.computeIfAbsent(signature, () -> {
+            List<String> paramNames = null;
+            if (!methodSymbol.params().isEmpty()) {
+                paramNames = new ArrayList<>(methodSymbol.params().size());
+                for (Symbol.VarSymbol p : methodSymbol.params()) {
+                    String s = p.name.toString();
+                    paramNames.add(s);
                 }
             }
 
-            returnType = type(methodType.restype);
+            return new JavaType.Method(
+                    null,
+                    methodSymbol.flags_field,
+                    null,
+                    methodSymbol.isConstructor() ? "<constructor>" : methodSymbol.getSimpleName().toString(),
+                    null,
+                    paramNames,
+                    null, null, null, null
+            );
+        }, method -> {
+            JavaType returnType = null;
+            List<JavaType> parameterTypes = null;
+            List<JavaType.FullyQualified> exceptionTypes = null;
 
-            if (!methodType.thrown.isEmpty()) {
-                exceptionTypes = new ArrayList<>(methodType.thrown.size());
-                for (Type exceptionType : methodType.thrown) {
-                    JavaType.FullyQualified javaType = TypeUtils.asFullyQualified(type(exceptionType));
-                    if (javaType == null) {
-                        // if the type cannot be resolved to a class (it might not be on the classpath, or it might have
-                        // been mapped to cyclic)
-                        if (exceptionType instanceof Type.ClassType) {
-                            Symbol.ClassSymbol sym = (Symbol.ClassSymbol) exceptionType.tsym;
-                            javaType = new JavaType.Class(null, Flag.Public.getBitMask(), sym.flatName().toString(), JavaType.Class.Kind.Class,
-                                    null, null, null, null, null, null, null);
+            if (selectType instanceof Type.MethodType) {
+                Type.MethodType methodType = (Type.MethodType) selectType;
+
+                if (!methodType.argtypes.isEmpty()) {
+                    parameterTypes = new ArrayList<>(methodType.argtypes.size());
+                    for (com.sun.tools.javac.code.Type argtype : methodType.argtypes) {
+                        if (argtype != null) {
+                            JavaType javaType = type(argtype);
+                            parameterTypes.add(javaType);
                         }
                     }
-                    if (javaType != null) {
-                        // if the exception type is not resolved, it is not added to the list of exceptions
-                        exceptionTypes.add(javaType);
+                }
+
+                returnType = type(methodType.restype);
+
+                if (!methodType.thrown.isEmpty()) {
+                    exceptionTypes = new ArrayList<>(methodType.thrown.size());
+                    for (Type exceptionType : methodType.thrown) {
+                        JavaType.FullyQualified javaType = TypeUtils.asFullyQualified(type(exceptionType));
+                        if (javaType == null) {
+                            // if the type cannot be resolved to a class (it might not be on the classpath, or it might have
+                            // been mapped to cyclic)
+                            if (exceptionType instanceof Type.ClassType) {
+                                Symbol.ClassSymbol sym = (Symbol.ClassSymbol) exceptionType.tsym;
+                                javaType = new JavaType.Class(null, Flag.Public.getBitMask(), sym.flatName().toString(), JavaType.Class.Kind.Class,
+                                        null, null, null, null, null, null, null);
+                            }
+                        }
+                        if (javaType != null) {
+                            // if the exception type is not resolved, it is not added to the list of exceptions
+                            exceptionTypes.add(javaType);
+                        }
                     }
                 }
+            } else if (selectType instanceof Type.UnknownType) {
+                returnType = JavaType.Unknown.getInstance();
             }
-        } else if (selectType instanceof Type.UnknownType) {
-            returnType = JavaType.Unknown.getInstance();
-        }
 
-        JavaType.FullyQualified resolvedDeclaringType = TypeUtils.asFullyQualified(type(methodSymbol.owner.type));
-        if (resolvedDeclaringType == null) {
-            return null;
-        }
+            JavaType.FullyQualified resolvedDeclaringType = TypeUtils.asFullyQualified(type(methodSymbol.owner.type));
+            if (resolvedDeclaringType == null) {
+                return null;
+            }
 
-        assert returnType != null;
+            assert returnType != null;
 
-        method.unsafeSet(resolvedDeclaringType,
-                methodSymbol.isConstructor() ? resolvedDeclaringType : returnType,
-                parameterTypes, exceptionTypes, listAnnotations(methodSymbol));
-        return method;
+            method.unsafeSet(resolvedDeclaringType,
+                    methodSymbol.isConstructor() ? resolvedDeclaringType : returnType,
+                    parameterTypes, exceptionTypes, listAnnotations(methodSymbol));
+            return method;
+        });
     }
 
     /**
@@ -475,13 +461,12 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
         // if the symbol is not a method symbol, there is a parser error in play
         Symbol.MethodSymbol methodSymbol = symbol instanceof Symbol.MethodSymbol ? (Symbol.MethodSymbol) symbol : null;
 
-        if (methodSymbol != null) {
-            String signature = signatureBuilder.methodSignature(methodSymbol);
-            JavaType.Method existing = typeCache.get(signature);
-            if (existing != null) {
-                return existing;
-            }
+        if (methodSymbol == null) {
+            return null;
+        }
 
+        String signature = signatureBuilder.methodSignature(methodSymbol);
+        return typeCache.computeIfAbsent(signature, () -> {
             List<String> paramNames = null;
             if (!methodSymbol.params().isEmpty()) {
                 paramNames = new ArrayList<>(methodSymbol.params().size());
@@ -500,18 +485,17 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
                     defaultValues = Collections.singletonList(methodSymbol.getDefaultValue().getValue().toString());
                 }
             }
-            JavaType.Method method = new JavaType.Method(
+            return new JavaType.Method(
                     null,
                     methodSymbol.flags_field,
-                    null,
+                    declaringType,
                     methodSymbol.isConstructor() ? "<constructor>" : methodSymbol.getSimpleName().toString(),
                     null,
                     paramNames,
                     null, null, null,
                     defaultValues
             );
-            typeCache.put(signature, method);
-
+        }, method -> {
             Type signatureType = methodSymbol.type instanceof Type.ForAll ?
                     ((Type.ForAll) methodSymbol.type).qtype :
                     methodSymbol.type;
@@ -585,9 +569,8 @@ class ReloadableJava17TypeMapping implements JavaTypeMapping<Tree> {
                     methodSymbol.isConstructor() ? resolvedDeclaringType : returnType,
                     parameterTypes, exceptionTypes, listAnnotations(methodSymbol));
             return method;
-        }
+        });
 
-        return null;
     }
 
     private void completeClassSymbol(Symbol.ClassSymbol classSymbol) {

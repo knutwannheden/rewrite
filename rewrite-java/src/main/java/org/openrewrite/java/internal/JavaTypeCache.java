@@ -16,21 +16,26 @@
 package org.openrewrite.java.internal;
 
 import lombok.Value;
+import net.jpountz.lz4.LZ4Compressor;
+import net.jpountz.lz4.LZ4Factory;
 import org.openrewrite.internal.lang.Nullable;
-import org.openrewrite.java.tree.JavaType;
-import org.xerial.snappy.Snappy;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class JavaTypeCache implements Cloneable {
     @Value
     private static class BytesKey {
+        boolean compressed;
         byte[] data;
     }
 
+    LZ4Factory factory = LZ4Factory.fastestInstance();
+    LZ4Compressor compressor = factory.fastCompressor();
     Map<BytesKey, Object> typeCache = new HashMap<>();
 
     @Nullable
@@ -39,16 +44,33 @@ public class JavaTypeCache implements Cloneable {
         return (T) typeCache.get(key(signature));
     }
 
+    public <T> T computeIfAbsent(String signature, Supplier<? extends T> typeSupplier, Function<T, T> postInitializer) {
+        AtomicBoolean newType = new AtomicBoolean(false);
+        BytesKey bytesKey = key(signature);
+        //noinspection unchecked
+        T result = (T) typeCache.computeIfAbsent(bytesKey, k -> {
+            newType.set(true);
+            return typeSupplier.get();
+        });
+        if (newType.get()) {
+            T initialized = postInitializer.apply(result);
+            if (initialized != result) {
+                typeCache.put(bytesKey, initialized);
+            }
+            return initialized;
+        }
+        return result;
+    }
+
     public void put(String signature, Object o) {
         typeCache.put(key(signature), o);
     }
 
     private BytesKey key(String signature) {
-        try {
-            return new BytesKey(Snappy.compress(signature));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        if (signature.length() < 50) {
+            return new BytesKey(false, signature.getBytes(StandardCharsets.UTF_8));
         }
+        return new BytesKey(true, compressor.compress(signature.getBytes(StandardCharsets.UTF_8)));
     }
 
     public void clear() {

@@ -18,6 +18,7 @@ package org.openrewrite.java.isolated;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.TypeTag;
+import com.sun.tools.javac.util.List;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.JavaTypeSignatureBuilder;
 import org.openrewrite.java.tree.JavaType;
@@ -26,44 +27,47 @@ import javax.lang.model.type.NullType;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.function.BiConsumer;
 
+@SuppressWarnings("UnusedReturnValue")
 class ReloadableJava17TypeSignatureBuilder implements JavaTypeSignatureBuilder {
     @Nullable
     private Set<String> typeVariableNameStack;
 
     @Override
     public String signature(@Nullable Object t) {
-        return signature((Type) t);
+        return appendSignature((Type) t, new StringBuilder()).toString();
     }
 
-    private String signature(@Nullable Type type) {
+    private StringBuilder appendSignature(@Nullable Type type, StringBuilder builder) {
         if (type == null || type instanceof Type.UnknownType || type instanceof NullType) {
-            return "{undefined}";
+            return builder.append("{undefined}");
         } else if (type instanceof Type.ClassType) {
+            Type.ClassType classType = (Type.ClassType) type;
             try {
-                return ((Type.ClassType) type).typarams_field != null && ((Type.ClassType) type).typarams_field.length() > 0 ? parameterizedSignature(type) : classSignature(type);
+                return classType.typarams_field != null && classType.typarams_field.length() > 0 ? appendParameterizedSignature(classType, builder) : appendClassSignature(classType, builder);
             } catch (Symbol.CompletionFailure ignored) {
-                return ((Type.ClassType) type).typarams_field != null && ((Type.ClassType) type).typarams_field.length() > 0 ? parameterizedSignature(type) : classSignature(type);
+                return classType.typarams_field != null && classType.typarams_field.length() > 0 ? appendParameterizedSignature(classType, builder) : appendClassSignature(classType, builder);
             }
         } else if (type instanceof Type.CapturedType) { // CapturedType must be evaluated before TypeVar
-            return signature(((Type.CapturedType) type).wildcard);
+            return appendSignature(((Type.CapturedType) type).wildcard, builder);
         } else if (type instanceof Type.TypeVar) {
-            return genericSignature(type);
+            return appendGenericSignature((Type.TypeVar) type, builder);
         } else if (type instanceof Type.JCPrimitiveType) {
-            return primitiveSignature(type);
+            return appendPrimitiveSignature((Type.JCPrimitiveType) type, builder);
         } else if (type instanceof Type.JCVoidType) {
-            return "void";
+            return builder.append("void");
         } else if (type instanceof Type.ArrayType) {
-            return arraySignature(type);
+            return appendArraySignature((Type.ArrayType) type, builder);
         } else if (type instanceof Type.WildcardType) {
             Type.WildcardType wildcard = (Type.WildcardType) type;
-            StringBuilder s = new StringBuilder("Generic{" + wildcard.kind.toString());
+            builder.append("Generic{").append(wildcard.kind.toString());
             if (!type.isUnbound()) {
-                s.append(signature(wildcard.type));
+                appendSignature(wildcard.type, builder);
             }
-            return s.append("}").toString();
+            return builder.append('}');
         } else if (type instanceof Type.JCNoType) {
-            return "{none}";
+            return builder.append("{none}");
         }
 
         throw new IllegalStateException("Unexpected type " + type.getClass().getName());
@@ -78,29 +82,40 @@ class ReloadableJava17TypeSignatureBuilder implements JavaTypeSignatureBuilder {
 
     @Override
     public String arraySignature(Object type) {
-        return signature(((Type.ArrayType) type).elemtype) + "[]";
+        return appendArraySignature((Type.ArrayType) type, new StringBuilder()).toString();
+    }
+
+    private StringBuilder appendArraySignature(Type.ArrayType type, StringBuilder builder) {
+        return appendSignature(type.elemtype, builder).append("[]");
     }
 
     @Override
     public String classSignature(Object type) {
+        return appendClassSignature((Type) type, new StringBuilder()).toString();
+    }
+
+    private StringBuilder appendClassSignature(Type type, StringBuilder builder) {
         if (type instanceof Type.JCVoidType) {
-            return "void";
+            return builder.append("void");
         } else if (type instanceof Type.JCPrimitiveType) {
-            return primitiveSignature(type);
+            return appendPrimitiveSignature((Type.JCPrimitiveType) type, builder);
         } else if (type instanceof Type.JCNoType) {
-            return "{undefined}";
+            return builder.append("{undefined}");
         }
 
-        Symbol.ClassSymbol sym = (Symbol.ClassSymbol) ((Type.ClassType) type).tsym;
+        Symbol.ClassSymbol sym = (Symbol.ClassSymbol) type.tsym;
         if (!sym.completer.isTerminal()) {
             completeClassSymbol(sym);
         }
-        return sym.flatName().toString();
+        return builder.append(sym.flatName());
     }
 
     @Override
     public String genericSignature(Object type) {
-        Type.TypeVar generic = (Type.TypeVar) type;
+        return appendGenericSignature((Type.TypeVar) type, new StringBuilder()).toString();
+    }
+
+    private StringBuilder appendGenericSignature(Type.TypeVar generic, StringBuilder builder) {
         String name = generic.tsym.name.toString();
 
         if (typeVariableNameStack == null) {
@@ -108,165 +123,179 @@ class ReloadableJava17TypeSignatureBuilder implements JavaTypeSignatureBuilder {
         }
 
         if (!typeVariableNameStack.add(name)) {
-            return "Generic{" + name + "}";
+            return builder.append("Generic{").append(name).append('}');
         }
 
-        StringBuilder s = new StringBuilder("Generic{").append(name);
+        builder.append("Generic{").append(name);
 
-        StringJoiner boundSigs = new StringJoiner(" & ");
+        int beforeExtends = builder.length();
+        builder.append(" extends ");
         if (generic.getUpperBound() instanceof Type.IntersectionClassType) {
             Type.IntersectionClassType intersectionBound = (Type.IntersectionClassType) generic.getUpperBound();
             if (intersectionBound.supertype_field != null) {
-                String bound = signature(intersectionBound.supertype_field);
-                if (!"java.lang.Object".equals(bound)) {
-                    boundSigs.add(bound);
+                int index = builder.length();
+                appendSignature(intersectionBound.supertype_field, builder);
+                if ("java.lang.Object".equals(builder.substring(index))) {
+                    builder.setLength(intersectionBound.interfaces_field.isEmpty() ? beforeExtends : index);
+                } else if (!intersectionBound.interfaces_field.isEmpty()) {
+                    builder.append(" & ");
                 }
             }
-            for (Type bound : intersectionBound.interfaces_field) {
-                boundSigs.add(signature(bound));
-            }
+            appendElements(intersectionBound.interfaces_field, this::appendSignature, " & ", "", "", builder);
         } else {
-            String bound = signature(generic.getUpperBound());
-            if (!"java.lang.Object".equals(bound)) {
-                boundSigs.add(bound);
+            int index = builder.length();
+            appendSignature(generic.getUpperBound(), builder);
+            if ("java.lang.Object".equals(builder.substring(index))) {
+                builder.setLength(beforeExtends);
             }
-        }
-
-        String boundSigStr = boundSigs.toString();
-        if (!boundSigStr.isEmpty()) {
-            s.append(" extends ").append(boundSigStr);
         }
 
         typeVariableNameStack.remove(name);
 
-        return s.append("}").toString();
+        return builder.append('}');
     }
 
     @Override
     public String parameterizedSignature(Object type) {
-        StringBuilder s = new StringBuilder(classSignature(type));
-        StringJoiner joiner = new StringJoiner(", ", "<", ">");
-        for (Type tp : ((Type.ClassType) type).typarams_field) {
-            String signature = signature(tp);
-            joiner.add(signature);
-        }
-        s.append(joiner);
-        return s.toString();
+        return appendParameterizedSignature((Type.ClassType) type, new StringBuilder()).toString();
+    }
+
+    private StringBuilder appendParameterizedSignature(Type.ClassType type, StringBuilder builder) {
+        appendClassSignature(type, builder);
+        appendElements(type.typarams_field, this::appendSignature, ", ", "<", ">", builder);
+        return builder;
     }
 
     @Override
     public String primitiveSignature(Object type) {
-        TypeTag tag = ((Type.JCPrimitiveType) type).getTag();
+        return appendPrimitiveSignature((Type.JCPrimitiveType) type, new StringBuilder()).toString();
+    }
+
+    private StringBuilder appendPrimitiveSignature(Type.JCPrimitiveType type, StringBuilder builder) {
+        TypeTag tag = type.getTag();
         switch (tag) {
             case BOOLEAN:
-                return JavaType.Primitive.Boolean.getKeyword();
+                return builder.append(JavaType.Primitive.Boolean.getKeyword());
             case BYTE:
-                return JavaType.Primitive.Byte.getKeyword();
+                return builder.append(JavaType.Primitive.Byte.getKeyword());
             case CHAR:
-                return JavaType.Primitive.Char.getKeyword();
+                return builder.append(JavaType.Primitive.Char.getKeyword());
             case DOUBLE:
-                return JavaType.Primitive.Double.getKeyword();
+                return builder.append(JavaType.Primitive.Double.getKeyword());
             case FLOAT:
-                return JavaType.Primitive.Float.getKeyword();
+                return builder.append(JavaType.Primitive.Float.getKeyword());
             case INT:
-                return JavaType.Primitive.Int.getKeyword();
+                return builder.append(JavaType.Primitive.Int.getKeyword());
             case LONG:
-                return JavaType.Primitive.Long.getKeyword();
+                return builder.append(JavaType.Primitive.Long.getKeyword());
             case SHORT:
-                return JavaType.Primitive.Short.getKeyword();
+                return builder.append(JavaType.Primitive.Short.getKeyword());
             case VOID:
-                return JavaType.Primitive.Void.getKeyword();
+                return builder.append(JavaType.Primitive.Void.getKeyword());
             case NONE:
-                return JavaType.Primitive.None.getKeyword();
+                return builder.append(JavaType.Primitive.None.getKeyword());
             case CLASS:
-                return JavaType.Primitive.String.getKeyword();
+                return builder.append(JavaType.Primitive.String.getKeyword());
             case BOT:
-                return JavaType.Primitive.Null.getKeyword();
+                return builder.append(JavaType.Primitive.Null.getKeyword());
             default:
                 throw new IllegalArgumentException("Unknown type tag " + tag);
         }
     }
 
     public String methodSignature(Type selectType, Symbol.MethodSymbol symbol) {
-        String s = classSignature(symbol.owner.type);
+        return appendMethodSignature(selectType, symbol, new StringBuilder()).toString();
+    }
+
+    private StringBuilder appendMethodSignature(Type selectType, Symbol.MethodSymbol symbol, StringBuilder builder) {
+        int start = builder.length();
+        appendClassSignature(symbol.owner.type, builder);
+
         if (symbol.isConstructor()) {
-            s += "{name=<constructor>,return=" + s;
+            int end = builder.length();
+            builder.append("{name=<constructor>,return=").append(builder.substring(start, end));
         } else {
-            s += "{name=" + symbol.getSimpleName().toString() +
-                    ",return=" + signature(selectType.getReturnType());
+            builder.append("{name=").append(symbol.getSimpleName().toString()).append(",return=");
+            appendSignature(selectType.getReturnType(), builder);
         }
 
-        return s + ",parameters=" + methodArgumentSignature(selectType) + '}';
+        builder.append(",parameters=");
+        appendMethodArgumentSignature(selectType, builder);
+        return builder.append('}');
     }
 
     public String methodSignature(Symbol.MethodSymbol symbol) {
-        String s = classSignature(symbol.owner.type);
+        return appendMethodSignature(symbol, new StringBuilder()).toString();
+    }
 
-        String returnType;
-        if (symbol.isStaticOrInstanceInit()) {
-            returnType = "void";
-        } else {
-            returnType = signature(symbol.getReturnType());
-        }
+    private StringBuilder appendMethodSignature(Symbol.MethodSymbol symbol, StringBuilder builder) {
+        int start = builder.length();
+        appendClassSignature(symbol.owner.type, builder);
 
         if (symbol.isConstructor()) {
-            s += "{name=<constructor>,return=" + s;
+            int end = builder.length();
+            builder.append("{name=<constructor>,return=").append(builder.substring(start, end));
         } else {
-            s += "{name=" + symbol.getSimpleName().toString() +
-                    ",return=" + returnType;
+            builder.append("{name=").append(symbol.getSimpleName().toString()).append(",return=");
+            if (symbol.isStaticOrInstanceInit()) {
+                builder.append("void");
+            } else {
+                appendSignature(symbol.getReturnType(), builder);
+            }
         }
 
-        return s + ",parameters=" + methodArgumentSignature(symbol) + '}';
+        builder.append(",parameters=");
+        appendMethodArgumentSignature(symbol, builder);
+        return builder.append('}');
     }
 
-    private String methodArgumentSignature(Symbol.MethodSymbol sym) {
+    private StringBuilder appendMethodArgumentSignature(Symbol.MethodSymbol sym, StringBuilder builder) {
         if (sym.isStaticOrInstanceInit()) {
-            return "[]";
+            return builder.append("[]");
         }
 
-        StringJoiner genericArgumentTypes = new StringJoiner(",", "[", "]");
-        if (sym.type == null) {
-            genericArgumentTypes.add("{undefined}");
-        } else {
-            for (Symbol.VarSymbol parameter : sym.getParameters()) {
-                genericArgumentTypes.add(signature(parameter.type));
-            }
-        }
-        return genericArgumentTypes.toString();
+        return appendElements(sym.getParameters(), (p, b) -> appendSignature(p.type, b), ",", "[", "]", builder);
     }
 
-    private String methodArgumentSignature(Type selectType) {
+    private StringBuilder appendMethodArgumentSignature(Type selectType, StringBuilder builder) {
         if (selectType instanceof Type.MethodType) {
-            StringJoiner resolvedArgumentTypes = new StringJoiner(",", "[", "]");
             Type.MethodType mt = (Type.MethodType) selectType;
-            if (!mt.argtypes.isEmpty()) {
-                for (Type argtype : mt.argtypes) {
-                    if (argtype != null) {
-                        resolvedArgumentTypes.add(signature(argtype));
-                    }
-                }
-            }
-            return resolvedArgumentTypes.toString();
+            return appendElements(mt.argtypes, this::appendSignature, ",", "[", "]", builder);
         } else if (selectType instanceof Type.ForAll) {
-            return methodArgumentSignature(((Type.ForAll) selectType).qtype);
+            return appendMethodArgumentSignature(((Type.ForAll) selectType).qtype, builder);
         } else if (selectType instanceof Type.JCNoType || selectType instanceof Type.UnknownType) {
-            return "{undefined}";
+            return builder.append("{undefined}");
         }
 
         throw new UnsupportedOperationException("Unexpected method type " + selectType.getClass().getName());
     }
 
     public String variableSignature(Symbol symbol) {
-        String owner;
+        StringBuilder owner = new StringBuilder();
         if (symbol.owner instanceof Symbol.MethodSymbol) {
-            owner = methodSignature((Symbol.MethodSymbol) symbol.owner);
+            appendMethodSignature((Symbol.MethodSymbol) symbol.owner, owner);
         } else {
-            owner = signature(symbol.owner.type);
-            if (owner.contains("<")) {
-                owner = owner.substring(0, owner.indexOf('<'));
+            appendSignature(symbol.owner.type, owner);
+            if (owner.indexOf("<") != -1) {
+                owner.setLength(owner.indexOf("<"));
             }
         }
 
-        return owner + "{name=" + symbol.name.toString() + ",type=" + signature(symbol.type) + '}';
+        owner.append("{name=").append(symbol.name.toString()).append(",type=");
+        appendSignature(symbol.type, owner);
+        return owner.append('}').toString();
+    }
+
+    private <T> StringBuilder appendElements(List<T> list, BiConsumer<T, StringBuilder> consumer,
+                                             String delimiter, String prefix, String suffix, StringBuilder builder) {
+        builder.append(prefix);
+        for (int i = 0; i < list.size(); i++) {
+            consumer.accept(list.get(i), builder);
+            if (i < list.size() - 1) {
+                builder.append(delimiter);
+            }
+        }
+        builder.append(suffix);
+        return builder;
     }
 }
