@@ -9,7 +9,7 @@ dependencies {
     api("com.fasterxml.jackson.core:jackson-core")
     api("com.fasterxml.jackson.core:jackson-databind")
     api("com.fasterxml.jackson.dataformat:jackson-dataformat-smile")
-    api("com.fasterxml.jackson.dataformat:jackson-dataformat-msgpack:0.9.+")
+    api("org.msgpack:jackson-dataformat-msgpack:0.9.+")
     api("com.fasterxml.jackson.module:jackson-module-parameter-names")
     api("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     implementation("net.java.dev.jna:jna-platform:latest.release")
