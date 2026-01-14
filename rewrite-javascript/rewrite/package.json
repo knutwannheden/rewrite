@@ -56,6 +56,7 @@
   },
   "dependencies": {
     "@akashrajpurohit/snowflake-id": "^2.0.0",
+    "@msgpack/msgpack": "^3.0.0",
     "@types/node": "^22.5.4",
     "commander": "^14.0.0",
     "diff": "^7.0.0",

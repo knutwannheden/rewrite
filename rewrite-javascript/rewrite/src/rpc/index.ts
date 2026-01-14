@@ -22,6 +22,12 @@ import {updateIfChanged} from "../util";
 export * from "./queue";
 export * from "../reference";
 export {RewriteRpc} from "./rewrite-rpc";
+export {
+    MsgPackContentTypeEncoder,
+    MsgPackContentTypeDecoder,
+    MsgPackMessageReader,
+    MsgPackMessageWriter
+} from "./msgpack-encoding";
 
 RpcCodecs.registerCodec(TreeKind.Checksum, {
     async rpcReceive(before: Checksum, q: RpcReceiveQueue): Promise<Checksum> {
