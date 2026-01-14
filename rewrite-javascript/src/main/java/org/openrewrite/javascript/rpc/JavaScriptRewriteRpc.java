@@ -206,6 +206,7 @@ public class JavaScriptRewriteRpc extends RewriteRpc {
         private @Nullable Path recipeInstallDir;
         private Duration timeout = Duration.ofSeconds(60);
         private boolean traceRpcMessages;
+        private boolean useMsgpack;
 
         private @Nullable Integer inspectBrk;
         private @Nullable Path inspectBrkRewriteSourcePath;
@@ -269,6 +270,22 @@ public class JavaScriptRewriteRpc extends RewriteRpc {
 
         public Builder traceRpcMessages() {
             return traceRpcMessages(true);
+        }
+
+        /**
+         * Use MsgPack encoding instead of JSON for RPC messages.
+         * MsgPack provides 20-30% smaller payloads and faster serialization.
+         *
+         * @param useMsgpack Whether to use MsgPack encoding
+         * @return This builder.
+         */
+        public Builder useMsgpack(boolean useMsgpack) {
+            this.useMsgpack = useMsgpack;
+            return this;
+        }
+
+        public Builder useMsgpack() {
+            return useMsgpack(true);
         }
 
         /**
@@ -338,6 +355,7 @@ public class JavaScriptRewriteRpc extends RewriteRpc {
                         serverJs.toAbsolutePath().normalize().toString(),
                         log == null ? null : "--log-file=" + log.toAbsolutePath().normalize(),
                         traceRpcMessages ? "--trace-rpc-messages" : null,
+                        useMsgpack ? "--use-msgpack" : null,
                         recipeInstallDir == null ? null : "--recipe-install-dir=" + recipeInstallDir.toAbsolutePath().normalize()
                 );
             } else {
@@ -350,6 +368,7 @@ public class JavaScriptRewriteRpc extends RewriteRpc {
                         log == null ? null : "--log-file=" + log.toAbsolutePath().normalize(),
                         metricsCsv == null ? null : "--metrics-csv=" + metricsCsv.toAbsolutePath().normalize(),
                         traceRpcMessages ? "--trace-rpc-messages" : null,
+                        useMsgpack ? "--use-msgpack" : null,
                         recipeInstallDir == null ? null : "--recipe-install-dir=" + recipeInstallDir.toAbsolutePath().normalize()
                 );
             }
@@ -378,6 +397,9 @@ public class JavaScriptRewriteRpc extends RewriteRpc {
                 // `npx` is typically a shebang script alongside the `node` executable
                 process.environment().put("PATH", npxPath.getParent() + File.pathSeparator +
                         System.getenv("PATH"));
+            }
+            if (useMsgpack) {
+                process.useMsgpack();
             }
             process.start();
 

@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import io.moderne.jsonrpc.JsonRpc;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
+import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.HeaderDelimitedMessageHandler;
 import io.moderne.jsonrpc.handler.MessageHandler;
 import io.moderne.jsonrpc.handler.TraceMessageHandler;
@@ -52,6 +53,9 @@ public class RewriteRpcProcess extends Thread {
     private boolean trace;
 
     @Setter
+    private boolean useMsgpack;
+
+    @Setter
     private @Nullable Path workingDirectory;
 
     @Nullable
@@ -75,6 +79,11 @@ public class RewriteRpcProcess extends Thread {
 
     public RewriteRpcProcess trace() {
         this.trace = true;
+        return this;
+    }
+
+    public RewriteRpcProcess useMsgpack() {
+        this.useMsgpack = true;
         return this;
     }
 
@@ -133,7 +142,12 @@ public class RewriteRpcProcess extends Thread {
         SimpleModule module = new SimpleModule();
         module.addSerializer(Path.class, new PathSerializer());
         module.addDeserializer(Path.class, new PathDeserializer());
-        JsonMessageFormatter formatter = new JsonMessageFormatter(module);
+
+        // Use MsgPack encoding if requested, otherwise use JSON
+        MessageFormatter formatter = useMsgpack
+                ? new MsgPackMessageFormatter(module)
+                : new JsonMessageFormatter(module);
+
         MessageHandler handler = new HeaderDelimitedMessageHandler(formatter,
                 process.getInputStream(), process.getOutputStream());
         if (trace) {
