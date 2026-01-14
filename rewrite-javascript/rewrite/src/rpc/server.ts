@@ -16,6 +16,7 @@
  */
 import * as rpc from "vscode-jsonrpc/node";
 import {RewriteRpc} from "./rewrite-rpc";
+import {MsgPackMessageReader, MsgPackMessageWriter} from "./msgpack-encoding";
 import * as fs from "fs";
 import {Command} from 'commander';
 import {dir} from 'tmp-promise';
@@ -38,6 +39,7 @@ interface ProgramOptions {
     batchSize?: number;
     recipeInstallDir?: string;
     profile?: boolean;
+    useMsgpack?: boolean;
 }
 
 async function main() {
@@ -49,6 +51,7 @@ async function main() {
         .option('--trace-rpc-messages', 'trace RPC messages at the protocol level')
         .option('--batch-size [size]', 'sets the batch size (default is 200)', s => parseInt(s, 10), 1000)
         .option('--recipe-install-dir <install_dir>', 'Recipe installation directory (default is a temporary directory)')
+        .option('--use-msgpack', 'use MsgPack encoding instead of JSON for RPC messages')
         .parse();
 
     const options = program.opts() as ProgramOptions;
@@ -98,11 +101,20 @@ async function main() {
     };
 
     // Create the connection with the custom logger
-    const connection = rpc.createMessageConnection(
-        new rpc.StreamMessageReader(process.stdin),
-        new rpc.StreamMessageWriter(process.stdout),
-        logger
-    );
+    // Use MsgPack encoding if requested, otherwise use standard JSON encoding
+    const connection = options.useMsgpack
+        ? rpc.createMessageConnection(
+            new MsgPackMessageReader(process.stdin),
+            new MsgPackMessageWriter(process.stdout),
+            logger
+        )
+        : rpc.createMessageConnection(
+            new rpc.StreamMessageReader(process.stdin),
+            new rpc.StreamMessageWriter(process.stdout),
+            logger
+        );
+
+    logger.info(`Using ${options.useMsgpack ? 'MsgPack' : 'JSON'} encoding for RPC messages`);
 
     if (options.traceRpcMessages) {
         await connection.trace(rpc.Trace.Verbose, logger).catch((err: Error) => {

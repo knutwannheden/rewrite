@@ -68,9 +68,23 @@ const connection = rpc.createMessageConnection(reader, writer);
 connection.listen();
 ```
 
+### Using MsgPack with the RPC Server
+
+The easiest way to enable MsgPack encoding is to use the `--use-msgpack` command-line option when starting the server:
+
+```bash
+# Start the server with MsgPack encoding
+rewrite-rpc --use-msgpack
+
+# With additional options
+rewrite-rpc --use-msgpack --log-file server.log --batch-size 500
+```
+
+The server will automatically use MsgPack encoding for all RPC communication when this flag is provided.
+
 ### Complete Server Example
 
-Here's how to modify the existing server to use MsgPack encoding:
+Here's how to programmatically configure the server to use MsgPack encoding:
 
 ```typescript
 import * as rpc from "vscode-jsonrpc/node";
@@ -87,6 +101,8 @@ const connection = rpc.createMessageConnection(
 // Use the connection as normal
 new RewriteRpc(connection, options);
 ```
+
+The server implementation in `server.ts` already supports this pattern and will automatically use MsgPack encoding when `--use-msgpack` is specified.
 
 ### Handling Binary Data
 
@@ -210,7 +226,23 @@ MsgPack encoding typically provides:
 
 ## Migration from JSON to MsgPack
 
-To migrate an existing JSON-RPC server to MsgPack:
+### Using the Command-Line Option (Recommended)
+
+The simplest way to enable MsgPack encoding is to add the `--use-msgpack` flag when starting the server:
+
+```bash
+# Before
+rewrite-rpc
+
+# After
+rewrite-rpc --use-msgpack
+```
+
+This automatically configures both the reader and writer to use MsgPack encoding.
+
+### Programmatic Migration
+
+To migrate an existing JSON-RPC server to MsgPack programmatically:
 
 1. Replace `StreamMessageReader` with `MsgPackMessageReader`:
    ```typescript
