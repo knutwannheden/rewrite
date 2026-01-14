@@ -15,19 +15,21 @@
  */
 package org.openrewrite.rpc;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import io.moderne.jsonrpc.JsonRpc;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
-import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.HeaderDelimitedMessageHandler;
 import io.moderne.jsonrpc.handler.MessageHandler;
 import io.moderne.jsonrpc.handler.TraceMessageHandler;
+import org.msgpack.jackson.dataformat.MessagePackFactory;
 import lombok.Getter;
 import lombok.Setter;
 import org.jspecify.annotations.Nullable;
@@ -144,8 +146,8 @@ public class RewriteRpcProcess extends Thread {
         module.addDeserializer(Path.class, new PathDeserializer());
 
         // Use MsgPack encoding if requested, otherwise use JSON
-        MessageFormatter formatter = useMsgpack
-                ? new MsgPackMessageFormatter(module)
+        JsonMessageFormatter formatter = useMsgpack
+                ? new JsonMessageFormatter(createMsgPackObjectMapper(module))
                 : new JsonMessageFormatter(module);
 
         MessageHandler handler = new HeaderDelimitedMessageHandler(formatter,
@@ -153,7 +155,7 @@ public class RewriteRpcProcess extends Thread {
         if (trace) {
             handler = new TraceMessageHandler("client", handler);
         }
-        this.rpcClient = new JsonRpc(handler);
+        this.rpcClient = new JsonRpc(handler, formatter);
     }
 
     public void shutdown() {
@@ -173,6 +175,24 @@ public class RewriteRpcProcess extends Thread {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    /**
+     * Creates an ObjectMapper configured for MsgPack encoding with the same settings
+     * as JsonMessageFormatter uses for JSON.
+     */
+    private static ObjectMapper createMsgPackObjectMapper(com.fasterxml.jackson.databind.Module... modules) {
+        ObjectMapper mapper = new ObjectMapper(new MessagePackFactory())
+                .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+                .registerModules(modules)
+                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()
+                .withCreatorVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
+                .withGetterVisibility(JsonAutoDetect.Visibility.NONE)
+                .withIsGetterVisibility(JsonAutoDetect.Visibility.NONE)
+                .withFieldVisibility(JsonAutoDetect.Visibility.ANY));
+        return mapper;
     }
 
     private static class PathSerializer extends JsonSerializer<Path> {
