@@ -107,6 +107,47 @@ class JavaScriptRewriteRpcTest implements RewriteTest {
         );
     }
 
+    /**
+     * Tests running a recipe with MsgPack encoding for RPC communication.
+     * This validates that MsgPack binary serialization works for complex recipe operations.
+     * <p>
+     * Note: This test may fail until the JSON-RPC implementation consistently uses
+     * the provided Jackson ObjectMapper/modules everywhere. A PR is in progress to fix this.
+     */
+    @Test
+    void runRecipeWithMsgPack() {
+        // Configure a new factory with MsgPack encoding enabled
+        JavaScriptRewriteRpc.setFactory(JavaScriptRewriteRpc.builder()
+          .recipeInstallDir(tempDir)
+          .metricsCsv(tempDir.resolve("rpc-msgpack-recipe.csv"))
+          .log(tempDir.resolve("rpc-msgpack-recipe.log"))
+          .traceRpcMessages()
+          .useMsgpack()  // Enable MsgPack encoding
+        );
+
+        installRecipes();
+        rewriteRun(
+          spec -> spec
+            .recipe(client().prepareRecipe("org.openrewrite.example.npm.change-version",
+              Map.of("version", "2.0.0"))),
+          json(
+            """
+              {
+                "name": "msgpack-test",
+                "version": "0.0.1"
+              }
+              """,
+            """
+              {
+                "name": "msgpack-test",
+                "version": "2.0.0"
+              }
+              """,
+            spec -> spec.path("package.json")
+          )
+        );
+    }
+
     @Test
     void printSubtree() {
         rewriteRun(
@@ -216,6 +257,42 @@ class JavaScriptRewriteRpcTest implements RewriteTest {
     @SuppressWarnings("JSUnusedLocalSymbols")
     @Test
     void parseAndPrintJavaScript() {
+        // language=javascript
+        String source = "const two = 1 + 1";
+
+        SourceFile cu = JavaScriptParser.builder().build().parseInputs(List.of(Parser.Input.fromString(
+          Path.of("test.js"), source)), null, new InMemoryExecutionContext()).findFirst().orElseThrow();
+
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Binary visitBinary(J.Binary binary, Integer p) {
+                assertThat(binary.getOperator()).isEqualTo(J.Binary.Type.Addition);
+                return binary;
+            }
+        }.visit(cu, 0);
+
+        assertThat(client().print(cu)).isEqualTo(source);
+    }
+
+    /**
+     * Tests MsgPack encoding for RPC communication between Java and TypeScript.
+     * This validates that MsgPack binary serialization works end-to-end.
+     * <p>
+     * Note: This test may fail until the JSON-RPC implementation consistently uses
+     * the provided Jackson ObjectMapper/modules everywhere. A PR is in progress to fix this.
+     */
+    @SuppressWarnings("JSUnusedLocalSymbols")
+    @Test
+    void parseAndPrintJavaScriptWithMsgPack() {
+        // Configure a new factory with MsgPack encoding enabled
+        JavaScriptRewriteRpc.setFactory(JavaScriptRewriteRpc.builder()
+          .recipeInstallDir(tempDir)
+          .metricsCsv(tempDir.resolve("rpc-msgpack.csv"))
+          .log(tempDir.resolve("rpc-msgpack.log"))
+          .traceRpcMessages()
+          .useMsgpack()  // Enable MsgPack encoding
+        );
+
         // language=javascript
         String source = "const two = 1 + 1";
 
