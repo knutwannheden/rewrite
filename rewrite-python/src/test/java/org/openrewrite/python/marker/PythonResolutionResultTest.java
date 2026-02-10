@@ -47,6 +47,7 @@ class PythonResolutionResultTest {
           Collections.emptyMap(),
           Collections.emptyList(),
           Collections.emptyList(),
+          Collections.emptyList(),
           Collections.singletonList(requests),
           null,
           null
@@ -74,6 +75,7 @@ class PythonResolutionResultTest {
           Collections.emptyList(),
           Collections.emptyMap(),
           Collections.emptyMap(),
+          Collections.emptyList(),
           Collections.emptyList(),
           Collections.emptyList(),
           Collections.singletonList(dep),
@@ -124,6 +126,7 @@ class PythonResolutionResultTest {
           deps,
           optDeps,
           depGroups,
+          Collections.emptyList(),
           Collections.emptyList(),
           Collections.emptyList(),
           Collections.emptyList(),

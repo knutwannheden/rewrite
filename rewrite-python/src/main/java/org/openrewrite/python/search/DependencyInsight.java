@@ -51,7 +51,7 @@ public class DependencyInsight extends Recipe {
     @Option(displayName = "Scope",
             description = "Match dependencies in the specified scope. All scopes are searched by default.",
             valid = {"dependencies", "buildRequires", "optionalDependencies", "dependencyGroups",
-                    "constraintDependencies", "overrideDependencies"},
+                    "constraintDependencies", "overrideDependencies", "pdmOverrides"},
             example = "dependencies",
             required = false)
     @Nullable
@@ -184,6 +184,9 @@ public class DependencyInsight extends Recipe {
                 }
                 if (scope == null || "overrideDependencies".equals(scope)) {
                     collectFromDeclared(resolution.getOverrideDependencies(), "overrideDependencies", matcher);
+                }
+                if (scope == null || "pdmOverrides".equals(scope)) {
+                    collectFromDeclared(resolution.getPdmOverrides(), "pdmOverrides", matcher);
                 }
             }
 

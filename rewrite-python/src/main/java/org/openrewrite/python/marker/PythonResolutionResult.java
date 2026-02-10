@@ -100,6 +100,13 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
      */
     List<Dependency> overrideDependencies;
 
+    /**
+     * PDM overrides from [tool.pdm.overrides].
+     * Forces specific versions during resolution when using the PDM package manager.
+     * Each entry maps a package name to a version constraint.
+     */
+    List<Dependency> pdmOverrides;
+
     List<ResolvedDependency> resolvedDependencies;
 
     @Nullable PackageManager packageManager;
@@ -178,6 +185,11 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
                 return dep;
             }
         }
+        for (Dependency dep : pdmOverrides) {
+            if (normalizeName(dep.getName()).equals(normalized)) {
+                return dep;
+            }
+        }
         return null;
     }
 
@@ -197,6 +209,7 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
         }
         all.addAll(constraintDependencies);
         all.addAll(overrideDependencies);
+        all.addAll(pdmOverrides);
         return all;
     }
 
@@ -231,6 +244,9 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
         q.getAndSendListAsRef(after, PythonResolutionResult::getOverrideDependencies,
                 dep -> dep.getName() + "@" + dep.getVersionConstraint(),
                 dep -> dep.rpcSend(dep, q));
+        q.getAndSendListAsRef(after, PythonResolutionResult::getPdmOverrides,
+                dep -> dep.getName() + "@" + dep.getVersionConstraint(),
+                dep -> dep.rpcSend(dep, q));
         q.getAndSendListAsRef(after, PythonResolutionResult::getResolvedDependencies,
                 resolved -> resolved.getName() + "@" + resolved.getVersion(),
                 resolved -> resolved.rpcSend(resolved, q));
@@ -260,6 +276,8 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
                 .withConstraintDependencies(q.receiveList(before.constraintDependencies,
                         dep -> dep.rpcReceive(dep, q)))
                 .withOverrideDependencies(q.receiveList(before.overrideDependencies,
+                        dep -> dep.rpcReceive(dep, q)))
+                .withPdmOverrides(q.receiveList(before.pdmOverrides,
                         dep -> dep.rpcReceive(dep, q)))
                 .withResolvedDependencies(q.receiveList(before.resolvedDependencies,
                         resolved -> resolved.rpcReceive(resolved, q)))

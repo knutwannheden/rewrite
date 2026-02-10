@@ -22,6 +22,7 @@ import org.openrewrite.*;
 import org.openrewrite.marker.Markers;
 import org.openrewrite.python.internal.PyProjectHelper;
 import org.openrewrite.python.marker.PythonResolutionResult;
+import org.openrewrite.python.marker.PythonResolutionResult.PackageManager;
 import org.openrewrite.toml.TomlIsoVisitor;
 import org.openrewrite.toml.tree.Space;
 import org.openrewrite.toml.tree.Toml;
@@ -33,11 +34,15 @@ import java.util.*;
 import static org.openrewrite.Tree.randomId;
 
 /**
- * Upgrade the version of a transitive (indirect) dependency by adding or updating
- * a constraint in {@code [tool.uv].constraint-dependencies} in pyproject.toml.
+ * Upgrade the version of a transitive (indirect) dependency in pyproject.toml.
  * <p>
- * This is the Python/uv equivalent of Maven's {@code UpgradeTransitiveDependencyVersion},
- * which uses {@code <dependencyManagement>} to pin transitive versions.
+ * The strategy depends on the detected package manager:
+ * <ul>
+ *   <li><b>uv</b>: Adds or updates an entry in {@code [tool.uv].constraint-dependencies}</li>
+ *   <li><b>pdm</b>: Adds or updates an entry in {@code [tool.pdm.overrides]}</li>
+ *   <li><b>pip, poetry, pipenv, or unknown</b>: Adds the package as a direct dependency
+ *       in {@code [project].dependencies}</li>
+ * </ul>
  * <p>
  * If the package is already a direct dependency, this recipe does nothing &mdash; use
  * {@link UpgradeDependencyVersion} to upgrade direct dependencies instead.
@@ -68,15 +73,20 @@ public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTr
 
     @Override
     public String getDescription() {
-        return "Upgrade the version of a transitive dependency by adding or updating a constraint " +
-                "in `[tool.uv].constraint-dependencies` in `pyproject.toml`. " +
+        return "Upgrade the version of a transitive dependency. " +
+                "For uv projects, adds or updates `[tool.uv].constraint-dependencies`. " +
+                "For pdm projects, adds or updates `[tool.pdm.overrides]`. " +
+                "For other package managers, adds the dependency directly to `[project].dependencies`. " +
                 "If the package is already a direct dependency, no changes are made.";
     }
 
     enum Action {
         NONE,
         ADD_CONSTRAINT,
-        UPGRADE_CONSTRAINT
+        UPGRADE_CONSTRAINT,
+        ADD_PDM_OVERRIDE,
+        UPGRADE_PDM_OVERRIDE,
+        ADD_DIRECT_DEPENDENCY
     }
 
     static class Accumulator {
@@ -111,27 +121,67 @@ public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTr
                     return document;
                 }
 
-                // Check if it's in the resolved (locked) dependencies at all
-                if (marker.getResolvedDependency(packageName) == null) {
-                    return document;
-                }
-
-                // Check if a constraint already exists
-                PythonResolutionResult.Dependency existingConstraint =
-                        PyProjectHelper.findDependencyInScope(marker, packageName, "constraintDependencies", null);
-
-                if (existingConstraint != null) {
-                    // Already constrained — upgrade if version differs
-                    if (!version.equals(existingConstraint.getVersionConstraint())) {
-                        acc.projectActions.put(sourcePath, Action.UPGRADE_CONSTRAINT);
-                    }
+                PackageManager pm = marker.getPackageManager();
+                if (pm == PackageManager.Uv) {
+                    scanForUv(marker, sourcePath, acc);
+                } else if (pm == PackageManager.Pdm) {
+                    scanForPdm(marker, sourcePath, acc);
                 } else {
-                    acc.projectActions.put(sourcePath, Action.ADD_CONSTRAINT);
+                    scanForFallback(marker, sourcePath, acc);
                 }
 
                 return document;
             }
         };
+    }
+
+    private void scanForUv(PythonResolutionResult marker, String sourcePath, Accumulator acc) {
+        // For uv, require the package to be in the resolved dependency tree
+        if (marker.getResolvedDependency(packageName) == null) {
+            return;
+        }
+
+        PythonResolutionResult.Dependency existing =
+                PyProjectHelper.findDependencyInScope(marker, packageName, "constraintDependencies", null);
+
+        if (existing != null) {
+            if (!version.equals(existing.getVersionConstraint())) {
+                acc.projectActions.put(sourcePath, Action.UPGRADE_CONSTRAINT);
+            }
+        } else {
+            acc.projectActions.put(sourcePath, Action.ADD_CONSTRAINT);
+        }
+    }
+
+    private void scanForPdm(PythonResolutionResult marker, String sourcePath, Accumulator acc) {
+        // For pdm, check resolved deps if available, but don't require them
+        // (we don't have a pdm.lock parser yet)
+        if (!marker.getResolvedDependencies().isEmpty() &&
+                marker.getResolvedDependency(packageName) == null) {
+            return;
+        }
+
+        PythonResolutionResult.Dependency existing =
+                PyProjectHelper.findDependencyInScope(marker, packageName, "pdmOverrides", null);
+
+        if (existing != null) {
+            if (!version.equals(existing.getVersionConstraint())) {
+                acc.projectActions.put(sourcePath, Action.UPGRADE_PDM_OVERRIDE);
+            }
+        } else {
+            acc.projectActions.put(sourcePath, Action.ADD_PDM_OVERRIDE);
+        }
+    }
+
+    private void scanForFallback(PythonResolutionResult marker, String sourcePath, Accumulator acc) {
+        // For pip/poetry/pipenv/unknown, check resolved deps if available
+        if (!marker.getResolvedDependencies().isEmpty() &&
+                marker.getResolvedDependency(packageName) == null) {
+            return;
+        }
+
+        // Add as a direct dependency
+        acc.projectActions.put(sourcePath, Action.ADD_DIRECT_DEPENDENCY);
     }
 
     @Override
@@ -143,10 +193,22 @@ public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTr
 
                 if (sourcePath.endsWith("pyproject.toml")) {
                     Action action = acc.projectActions.get(sourcePath);
-                    if (action == Action.ADD_CONSTRAINT) {
-                        return addConstraint(document, ctx, acc);
-                    } else if (action == Action.UPGRADE_CONSTRAINT) {
-                        return upgradeConstraint(document, ctx, acc);
+                    if (action == null) {
+                        return document;
+                    }
+                    switch (action) {
+                        case ADD_CONSTRAINT:
+                            return addToArray(document, ctx, acc, "constraintDependencies");
+                        case UPGRADE_CONSTRAINT:
+                            return upgradeConstraint(document, ctx, acc);
+                        case ADD_PDM_OVERRIDE:
+                            return addPdmOverride(document, ctx, acc);
+                        case UPGRADE_PDM_OVERRIDE:
+                            return upgradePdmOverride(document, ctx, acc);
+                        case ADD_DIRECT_DEPENDENCY:
+                            return addToArray(document, ctx, acc, null);
+                        default:
+                            return document;
                     }
                 }
 
@@ -163,7 +225,14 @@ public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTr
         };
     }
 
-    private Toml.Document addConstraint(Toml.Document document, ExecutionContext ctx, Accumulator acc) {
+    /**
+     * Add a PEP 508 dependency string to a TOML array.
+     *
+     * @param scope the target scope (null or "dependencies" for [project].dependencies,
+     *              "constraintDependencies" for [tool.uv].constraint-dependencies)
+     */
+    private Toml.Document addToArray(Toml.Document document, ExecutionContext ctx,
+                                      Accumulator acc, @Nullable String scope) {
         String pep508 = packageName + version;
 
         Toml.Document updated = (Toml.Document) new TomlIsoVisitor<ExecutionContext>() {
@@ -171,7 +240,7 @@ public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTr
             public Toml.Array visitArray(Toml.Array array, ExecutionContext ctx) {
                 Toml.Array a = super.visitArray(array, ctx);
 
-                if (!PyProjectHelper.isInsideDependencyArray(getCursor(), "constraintDependencies", null)) {
+                if (!PyProjectHelper.isInsideDependencyArray(getCursor(), scope, null)) {
                     return a;
                 }
 
@@ -245,8 +314,8 @@ public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTr
                     return l;
                 }
 
-                // Walk cursor to verify we're in [tool.uv].constraint-dependencies
-                if (!isInsideConstraintDependencies()) {
+                if (!PyProjectHelper.isInsideDependencyArray(getCursor().getParentTreeCursor(),
+                        "constraintDependencies", null)) {
                     return l;
                 }
 
@@ -270,33 +339,95 @@ public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTr
                 String newSpec = sb.toString();
                 return l.withSource("\"" + newSpec + "\"").withValue(newSpec);
             }
+        }.visitNonNull(document, ctx);
 
-            private boolean isInsideConstraintDependencies() {
-                Cursor c = getCursor();
-                boolean inArray = false;
-                String keyName = null;
-                String tableName = null;
+        if (updated != document) {
+            updated = PyProjectHelper.regenerateLockAndRefreshMarker(updated, acc.updatedLockFiles);
+        }
 
-                while (c != null) {
-                    Object value = c.getValue();
-                    if (value instanceof Toml.Array) {
-                        inArray = true;
-                    } else if (value instanceof Toml.KeyValue && inArray && keyName == null) {
-                        Toml.KeyValue kv = (Toml.KeyValue) value;
-                        if (kv.getKey() instanceof Toml.Identifier) {
-                            keyName = ((Toml.Identifier) kv.getKey()).getName();
-                        }
-                    } else if (value instanceof Toml.Table && keyName != null) {
-                        Toml.Table table = (Toml.Table) value;
-                        if (table.getName() != null) {
-                            tableName = table.getName().getName();
-                        }
-                        break;
-                    }
-                    c = c.getParent();
+        return updated;
+    }
+
+    /**
+     * Add a new key-value entry to the [tool.pdm.overrides] table.
+     */
+    private Toml.Document addPdmOverride(Toml.Document document, ExecutionContext ctx, Accumulator acc) {
+        Toml.Document updated = (Toml.Document) new TomlIsoVisitor<ExecutionContext>() {
+            @Override
+            public Toml.Table visitTable(Toml.Table table, ExecutionContext ctx) {
+                Toml.Table t = super.visitTable(table, ctx);
+                if (t.getName() == null || !"tool.pdm.overrides".equals(t.getName().getName())) {
+                    return t;
                 }
 
-                return "constraint-dependencies".equals(keyName) && "tool.uv".equals(tableName);
+                // Build a new KeyValue: packageName = "version"
+                Toml.Identifier key = new Toml.Identifier(
+                        randomId(), Space.EMPTY, Markers.EMPTY, packageName, packageName
+                );
+                Toml.Literal value = new Toml.Literal(
+                        randomId(), Space.SINGLE_SPACE, Markers.EMPTY,
+                        TomlType.Primitive.String,
+                        "\"" + version + "\"", version
+                );
+                Toml.KeyValue newEntry = new Toml.KeyValue(
+                        randomId(), Space.EMPTY, Markers.EMPTY,
+                        new TomlRightPadded<>(key, Space.SINGLE_SPACE, Markers.EMPTY),
+                        value
+                );
+
+                // Determine formatting from existing entries
+                List<TomlRightPadded<Toml>> existingValues = t.getPadding().getValues();
+                Space entryPrefix;
+                if (!existingValues.isEmpty()) {
+                    entryPrefix = existingValues.get(existingValues.size() - 1).getElement().getPrefix();
+                } else {
+                    entryPrefix = Space.format("\n");
+                }
+                newEntry = newEntry.withPrefix(entryPrefix);
+
+                List<TomlRightPadded<Toml>> newValues = new ArrayList<>(existingValues);
+                newValues.add(new TomlRightPadded<>(newEntry, Space.EMPTY, Markers.EMPTY));
+
+                return t.getPadding().withValues(newValues);
+            }
+        }.visitNonNull(document, ctx);
+
+        if (updated != document) {
+            updated = PyProjectHelper.regenerateLockAndRefreshMarker(updated, acc.updatedLockFiles);
+        }
+
+        return updated;
+    }
+
+    /**
+     * Upgrade the value of an existing entry in the [tool.pdm.overrides] table.
+     */
+    private Toml.Document upgradePdmOverride(Toml.Document document, ExecutionContext ctx, Accumulator acc) {
+        String normalizedName = PythonResolutionResult.normalizeName(packageName);
+
+        Toml.Document updated = (Toml.Document) new TomlIsoVisitor<ExecutionContext>() {
+            @Override
+            public Toml.KeyValue visitKeyValue(Toml.KeyValue keyValue, ExecutionContext ctx) {
+                Toml.KeyValue kv = super.visitKeyValue(keyValue, ctx);
+
+                if (!PyProjectHelper.isInsidePdmOverridesTable(getCursor())) {
+                    return kv;
+                }
+
+                if (!(kv.getKey() instanceof Toml.Identifier)) {
+                    return kv;
+                }
+                String keyName = ((Toml.Identifier) kv.getKey()).getName();
+                if (!PythonResolutionResult.normalizeName(keyName).equals(normalizedName)) {
+                    return kv;
+                }
+
+                if (!(kv.getValue() instanceof Toml.Literal)) {
+                    return kv;
+                }
+
+                Toml.Literal lit = (Toml.Literal) kv.getValue();
+                return kv.withValue(lit.withSource("\"" + version + "\"").withValue(version));
             }
         }.visitNonNull(document, ctx);
 

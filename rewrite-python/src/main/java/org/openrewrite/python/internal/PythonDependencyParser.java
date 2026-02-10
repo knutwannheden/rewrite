@@ -67,6 +67,18 @@ public class PythonDependencyParser {
         List<Dependency> constraintDependencies = getDependencyList(toolUvTable, "constraint-dependencies");
         List<Dependency> overrideDependencies = getDependencyList(toolUvTable, "override-dependencies");
 
+        // Extract [tool.pdm.overrides] table entries
+        List<Dependency> pdmOverrides = getPdmOverrides(tables);
+
+        // Detect package manager from tool sections (Uv is detected later from lock file)
+        PythonResolutionResult.PackageManager packageManager = null;
+        for (String tableName : tables.keySet()) {
+            if (tableName.equals("tool.pdm") || tableName.startsWith("tool.pdm.")) {
+                packageManager = PythonResolutionResult.PackageManager.Pdm;
+                break;
+            }
+        }
+
         String path = doc.getSourcePath().toString();
 
         return new PythonResolutionResult(
@@ -84,8 +96,9 @@ public class PythonDependencyParser {
                 dependencyGroups,
                 constraintDependencies,
                 overrideDependencies,
+                pdmOverrides,
                 Collections.emptyList(),
-                null,
+                packageManager,
                 null
         );
     }
@@ -212,6 +225,31 @@ public class PythonDependencyParser {
             }
         }
         return null;
+    }
+
+    /**
+     * Extract PDM overrides from the [tool.pdm.overrides] table.
+     * Each entry is a key-value pair: package_name = "version_constraint".
+     */
+    private static List<Dependency> getPdmOverrides(Map<String, Toml.Table> tables) {
+        Toml.Table overridesTable = tables.get("tool.pdm.overrides");
+        if (overridesTable == null) {
+            return Collections.emptyList();
+        }
+        List<Dependency> deps = new ArrayList<>();
+        for (Toml value : overridesTable.getValues()) {
+            if (value instanceof Toml.KeyValue) {
+                Toml.KeyValue kv = (Toml.KeyValue) value;
+                if (kv.getKey() instanceof Toml.Identifier && kv.getValue() instanceof Toml.Literal) {
+                    String depName = ((Toml.Identifier) kv.getKey()).getName();
+                    Object val = ((Toml.Literal) kv.getValue()).getValue();
+                    if (val instanceof String) {
+                        deps.add(new Dependency(depName, (String) val, null, null, null));
+                    }
+                }
+            }
+        }
+        return deps;
     }
 
     /**

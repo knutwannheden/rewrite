@@ -228,8 +228,29 @@ public class PyProjectHelper {
             return findInList(marker.getConstraintDependencies(), normalized);
         } else if ("overrideDependencies".equals(scope)) {
             return findInList(marker.getOverrideDependencies(), normalized);
+        } else if ("pdmOverrides".equals(scope)) {
+            return findInList(marker.getPdmOverrides(), normalized);
         }
         return null;
+    }
+
+    /**
+     * Check whether a cursor path represents a position inside
+     * the {@code [tool.pdm.overrides]} table in a pyproject.toml.
+     */
+    public static boolean isInsidePdmOverridesTable(Cursor cursor) {
+        Cursor c = cursor;
+        while (c != null) {
+            Object value = c.getValue();
+            if (value instanceof Toml.Table) {
+                Toml.Table table = (Toml.Table) value;
+                if (table.getName() != null && "tool.pdm.overrides".equals(table.getName().getName())) {
+                    return true;
+                }
+            }
+            c = c.getParent();
+        }
+        return false;
     }
 
     private static PythonResolutionResult.@Nullable Dependency findInList(
