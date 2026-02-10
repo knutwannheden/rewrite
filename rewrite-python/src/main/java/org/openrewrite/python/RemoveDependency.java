@@ -17,10 +17,8 @@ package org.openrewrite.python;
 
 import lombok.EqualsAndHashCode;
 import lombok.Value;
-import org.openrewrite.ExecutionContext;
-import org.openrewrite.Option;
-import org.openrewrite.ScanningRecipe;
-import org.openrewrite.TreeVisitor;
+import org.jspecify.annotations.Nullable;
+import org.openrewrite.*;
 import org.openrewrite.python.internal.PyProjectHelper;
 import org.openrewrite.python.marker.PythonResolutionResult;
 import org.openrewrite.toml.TomlIsoVisitor;
@@ -31,7 +29,10 @@ import org.openrewrite.toml.tree.TomlRightPadded;
 import java.util.*;
 
 /**
- * Remove a dependency from the {@code [project].dependencies} array in pyproject.toml.
+ * Remove a dependency from a dependency list in pyproject.toml.
+ * By default, removes from {@code [project].dependencies}. Use the {@code scope} and
+ * {@code groupName} options to target {@code [project.optional-dependencies]} or
+ * {@code [dependency-groups]} instead.
  * When uv is available, the uv.lock file is regenerated to reflect the change.
  */
 @EqualsAndHashCode(callSuper = false)
@@ -42,6 +43,22 @@ public class RemoveDependency extends ScanningRecipe<RemoveDependency.Accumulato
             description = "The PyPI package name to remove.",
             example = "requests")
     String packageName;
+
+    @Option(displayName = "Scope",
+            description = "Where to remove the dependency from. Defaults to `[project].dependencies`.",
+            valid = {"dependencies", "optionalDependencies", "dependencyGroups"},
+            example = "dependencyGroups",
+            required = false)
+    @Nullable
+    String scope;
+
+    @Option(displayName = "Group name",
+            description = "The group name within `[project.optional-dependencies]` or `[dependency-groups]`. " +
+                    "Required when scope is `optionalDependencies` or `dependencyGroups`.",
+            example = "dev",
+            required = false)
+    @Nullable
+    String groupName;
 
     @Override
     public String getDisplayName() {
@@ -55,8 +72,19 @@ public class RemoveDependency extends ScanningRecipe<RemoveDependency.Accumulato
 
     @Override
     public String getDescription() {
-        return "Remove a dependency from the `[project].dependencies` array in `pyproject.toml`. " +
+        return "Remove a dependency from a dependency list in `pyproject.toml`. " +
+                "By default removes from `[project].dependencies`. Use `scope` and `groupName` " +
+                "to target `[project.optional-dependencies]` or `[dependency-groups]`. " +
                 "When `uv` is available, the `uv.lock` file is regenerated.";
+    }
+
+    @Override
+    public Validated<Object> validate() {
+        Validated<Object> v = super.validate();
+        if ("optionalDependencies".equals(scope) || "dependencyGroups".equals(scope)) {
+            v = v.and(Validated.required("groupName", groupName));
+        }
+        return v;
     }
 
     static class Accumulator {
@@ -85,8 +113,8 @@ public class RemoveDependency extends ScanningRecipe<RemoveDependency.Accumulato
 
                 PythonResolutionResult marker = resolution.get();
 
-                // Check if the dependency exists
-                if (marker.findDependency(packageName) == null) {
+                // Check if the dependency exists in the target scope
+                if (PyProjectHelper.findDependencyInScope(marker, packageName, scope, groupName) == null) {
                     return document;
                 }
 
@@ -128,7 +156,7 @@ public class RemoveDependency extends ScanningRecipe<RemoveDependency.Accumulato
             public Toml.Array visitArray(Toml.Array array, ExecutionContext ctx) {
                 Toml.Array a = super.visitArray(array, ctx);
 
-                if (!PyProjectHelper.isInsideProjectDependencies(getCursor())) {
+                if (!PyProjectHelper.isInsideDependencyArray(getCursor(), scope, groupName)) {
                     return a;
                 }
 

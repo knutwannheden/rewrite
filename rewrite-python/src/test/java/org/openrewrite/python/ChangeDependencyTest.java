@@ -16,82 +16,23 @@
 package org.openrewrite.python;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.openrewrite.test.RewriteTest;
 
-import java.nio.file.Path;
-
 import static org.openrewrite.python.Assertions.pyproject;
-import static org.openrewrite.python.Assertions.uv;
 
-class AddDependencyTest implements RewriteTest {
-
-    @Test
-    void addDependencyWithResolvedProject(@TempDir Path tempDir) {
-        rewriteRun(
-          spec -> spec.recipe(new AddDependency("flask", ">=2.0", null, null)),
-          uv(tempDir,
-            pyproject(
-              """
-                [project]
-                name = "myapp"
-                version = "1.0.0"
-                dependencies = [
-                    "requests>=2.28.0",
-                ]
-                """,
-              """
-                [project]
-                name = "myapp"
-                version = "1.0.0"
-                dependencies = [
-                    "requests>=2.28.0",
-                    "flask>=2.0",
-                ]
-                """
-            )
-          )
-        );
-    }
+class ChangeDependencyTest implements RewriteTest {
 
     @Test
-    void addDependencyToExistingList() {
+    void changePackageName() {
         rewriteRun(
-          spec -> spec.recipe(new AddDependency("flask", null, null, null)),
+          spec -> spec.recipe(new ChangeDependency("pycrypto", "pycryptodome", null)),
           pyproject(
             """
               [project]
               name = "myapp"
               version = "1.0.0"
               dependencies = [
-                  "requests>=2.28.0",
-                  "click>=8.0",
-              ]
-              """,
-            """
-              [project]
-              name = "myapp"
-              version = "1.0.0"
-              dependencies = [
-                  "requests>=2.28.0",
-                  "click>=8.0",
-                  "flask",
-              ]
-              """
-          )
-        );
-    }
-
-    @Test
-    void addDependencyWithVersion() {
-        rewriteRun(
-          spec -> spec.recipe(new AddDependency("flask", ">=2.0", null, null)),
-          pyproject(
-            """
-              [project]
-              name = "myapp"
-              version = "1.0.0"
-              dependencies = [
+                  "pycrypto>=2.6",
                   "requests>=2.28.0",
               ]
               """,
@@ -100,8 +41,8 @@ class AddDependencyTest implements RewriteTest {
               name = "myapp"
               version = "1.0.0"
               dependencies = [
+                  "pycryptodome>=2.6",
                   "requests>=2.28.0",
-                  "flask>=2.0",
               ]
               """
           )
@@ -109,9 +50,86 @@ class AddDependencyTest implements RewriteTest {
     }
 
     @Test
-    void skipWhenAlreadyPresent() {
+    void changePackageNameAndVersion() {
         rewriteRun(
-          spec -> spec.recipe(new AddDependency("requests", null, null, null)),
+          spec -> spec.recipe(new ChangeDependency("pycrypto", "pycryptodome", ">=3.15")),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = [
+                  "pycrypto>=2.6",
+                  "requests>=2.28.0",
+              ]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = [
+                  "pycryptodome>=3.15",
+                  "requests>=2.28.0",
+              ]
+              """
+          )
+        );
+    }
+
+    @Test
+    void preservesExtrasAndMarkers() {
+        rewriteRun(
+          spec -> spec.recipe(new ChangeDependency("old-pkg", "new-pkg", null)),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = [
+                  "old-pkg[security]>=1.0; python_version>='3.8'",
+              ]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = [
+                  "new-pkg[security]>=1.0; python_version>='3.8'",
+              ]
+              """
+          )
+        );
+    }
+
+    @Test
+    void changePackageNameWithNewVersionAndPreserveMarker() {
+        rewriteRun(
+          spec -> spec.recipe(new ChangeDependency("old-pkg", "new-pkg", ">=2.0")),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = [
+                  "old-pkg>=1.0; python_version>='3.8'",
+              ]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = [
+                  "new-pkg>=2.0; python_version>='3.8'",
+              ]
+              """
+          )
+        );
+    }
+
+    @Test
+    void skipWhenNotPresent() {
+        rewriteRun(
+          spec -> spec.recipe(new ChangeDependency("nonexistent", "new-pkg", null)),
           pyproject(
             """
               [project]
@@ -126,146 +144,110 @@ class AddDependencyTest implements RewriteTest {
     }
 
     @Test
-    void addToEmptyDependencyList() {
+    void normalizeNameForMatching() {
         rewriteRun(
-          spec -> spec.recipe(new AddDependency("flask", ">=2.0", null, null)),
+          spec -> spec.recipe(new ChangeDependency("typing_extensions", "typing-extensions-v2", null)),
           pyproject(
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = []
+              dependencies = [
+                  "typing-extensions>=4.0.0",
+              ]
               """,
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = ["flask>=2.0"]
+              dependencies = [
+                  "typing-extensions-v2>=4.0.0",
+              ]
               """
           )
         );
     }
 
     @Test
-    void addToInlineDependencyList() {
+    void changePackageWithoutVersion() {
         rewriteRun(
-          spec -> spec.recipe(new AddDependency("flask", null, null, null)),
+          spec -> spec.recipe(new ChangeDependency("old-pkg", "new-pkg", null)),
           pyproject(
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
+              dependencies = [
+                  "old-pkg",
+              ]
               """,
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = ["requests>=2.28.0", "flask"]
+              dependencies = [
+                  "new-pkg",
+              ]
               """
           )
         );
     }
 
     @Test
-    void addToOptionalDependencies() {
+    void changesAcrossAllScopes() {
         rewriteRun(
-          spec -> spec.recipe(new AddDependency("coverage", ">=7.0", "optionalDependencies", "test")),
+          spec -> spec.recipe(new ChangeDependency("old-pkg", "new-pkg", null)),
           pyproject(
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
+              dependencies = [
+                  "old-pkg>=1.0",
+                  "requests>=2.28.0",
+              ]
 
               [project.optional-dependencies]
-              test = ["pytest>=7.0"]
+              security = ["old-pkg[crypto]>=1.0"]
+
+              [dependency-groups]
+              dev = ["old-pkg>=1.0"]
               """,
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
+              dependencies = [
+                  "new-pkg>=1.0",
+                  "requests>=2.28.0",
+              ]
 
               [project.optional-dependencies]
-              test = ["pytest>=7.0", "coverage>=7.0"]
+              security = ["new-pkg[crypto]>=1.0"]
+
+              [dependency-groups]
+              dev = ["new-pkg>=1.0"]
               """
           )
         );
     }
 
     @Test
-    void addToDependencyGroups() {
+    void changeInInlineList() {
         rewriteRun(
-          spec -> spec.recipe(new AddDependency("coverage", ">=7.0", "dependencyGroups", "dev")),
+          spec -> spec.recipe(new ChangeDependency("sklearn", "scikit-learn", ">=1.3")),
           pyproject(
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
-
-              [dependency-groups]
-              dev = ["pytest>=7.0"]
+              dependencies = ["sklearn>=0.24", "numpy>=1.20"]
               """,
             """
               [project]
               name = "myapp"
               version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
-
-              [dependency-groups]
-              dev = ["pytest>=7.0", "coverage>=7.0"]
-              """
-          )
-        );
-    }
-
-    @Test
-    void skipWhenAlreadyInOptionalDependencies() {
-        rewriteRun(
-          spec -> spec.recipe(new AddDependency("pytest", null, "optionalDependencies", "test")),
-          pyproject(
-            """
-              [project]
-              name = "myapp"
-              version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
-
-              [project.optional-dependencies]
-              test = ["pytest>=7.0"]
-              """
-          )
-        );
-    }
-
-    @Test
-    void addToDependencyGroupDoesNotAffectMainDeps() {
-        rewriteRun(
-          spec -> spec.recipe(new AddDependency("ruff", ">=0.1", "dependencyGroups", "lint")),
-          pyproject(
-            """
-              [project]
-              name = "myapp"
-              version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
-
-              [dependency-groups]
-              lint = [
-                  "mypy>=1.0",
-              ]
-              """,
-            """
-              [project]
-              name = "myapp"
-              version = "1.0.0"
-              dependencies = ["requests>=2.28.0"]
-
-              [dependency-groups]
-              lint = [
-                  "mypy>=1.0",
-                  "ruff>=0.1",
-              ]
+              dependencies = ["scikit-learn>=1.3", "numpy>=1.20"]
               """
           )
         );

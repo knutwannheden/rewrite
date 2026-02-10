@@ -28,7 +28,10 @@ import org.openrewrite.toml.tree.TomlType;
 import java.util.*;
 
 /**
- * Upgrade the version constraint for a dependency in {@code [project].dependencies} in pyproject.toml.
+ * Upgrade the version constraint for a dependency in pyproject.toml.
+ * By default, targets {@code [project].dependencies}. Use the {@code scope} and
+ * {@code groupName} options to target {@code [project.optional-dependencies]} or
+ * {@code [dependency-groups]} instead.
  * When uv is available, the uv.lock file is regenerated to reflect the change.
  */
 @EqualsAndHashCode(callSuper = false)
@@ -45,6 +48,22 @@ public class UpgradeDependencyVersion extends ScanningRecipe<UpgradeDependencyVe
             example = ">=2.31.0")
     String newVersion;
 
+    @Option(displayName = "Scope",
+            description = "Where to upgrade the dependency. Defaults to `[project].dependencies`.",
+            valid = {"dependencies", "optionalDependencies", "dependencyGroups"},
+            example = "dependencyGroups",
+            required = false)
+    @Nullable
+    String scope;
+
+    @Option(displayName = "Group name",
+            description = "The group name within `[project.optional-dependencies]` or `[dependency-groups]`. " +
+                    "Required when scope is `optionalDependencies` or `dependencyGroups`.",
+            example = "dev",
+            required = false)
+    @Nullable
+    String groupName;
+
     @Override
     public String getDisplayName() {
         return "Upgrade Python dependency version";
@@ -57,8 +76,19 @@ public class UpgradeDependencyVersion extends ScanningRecipe<UpgradeDependencyVe
 
     @Override
     public String getDescription() {
-        return "Upgrade the version constraint for a dependency in `[project].dependencies` in `pyproject.toml`. " +
+        return "Upgrade the version constraint for a dependency in `pyproject.toml`. " +
+                "By default targets `[project].dependencies`. Use `scope` and `groupName` " +
+                "to target `[project.optional-dependencies]` or `[dependency-groups]`. " +
                 "When `uv` is available, the `uv.lock` file is regenerated.";
+    }
+
+    @Override
+    public Validated<Object> validate() {
+        Validated<Object> v = super.validate();
+        if ("optionalDependencies".equals(scope) || "dependencyGroups".equals(scope)) {
+            v = v.and(Validated.required("groupName", groupName));
+        }
+        return v;
     }
 
     static class Accumulator {
@@ -88,7 +118,8 @@ public class UpgradeDependencyVersion extends ScanningRecipe<UpgradeDependencyVe
                 PythonResolutionResult marker = resolution.get();
 
                 // Check if the dependency exists and has a different version
-                PythonResolutionResult.Dependency dep = marker.findDependency(packageName);
+                PythonResolutionResult.Dependency dep = PyProjectHelper.findDependencyInScope(
+                        marker, packageName, scope, groupName);
                 if (dep == null) {
                     return document;
                 }
@@ -144,8 +175,8 @@ public class UpgradeDependencyVersion extends ScanningRecipe<UpgradeDependencyVe
                     return l;
                 }
 
-                // Check if we're inside [project].dependencies array
-                if (!isInsideProjectDependencies()) {
+                // Check if we're inside the target dependency array
+                if (!isInsideTargetDependencies()) {
                     return l;
                 }
 
@@ -161,33 +192,46 @@ public class UpgradeDependencyVersion extends ScanningRecipe<UpgradeDependencyVe
                 return l.withSource("\"" + newSpec + "\"").withValue(newSpec);
             }
 
-            private boolean isInsideProjectDependencies() {
-                // Walk up the cursor to verify we're inside [project].dependencies
+            private boolean isInsideTargetDependencies() {
+                // Walk up the cursor to verify we're inside the correct dependency array
                 Cursor c = getCursor();
                 boolean inArray = false;
-                boolean inDependencies = false;
-                boolean inProject = false;
+                String keyName = null;
+                String tableName = null;
 
                 while (c != null) {
                     Object value = c.getValue();
                     if (value instanceof Toml.Array) {
                         inArray = true;
-                    } else if (value instanceof Toml.KeyValue && inArray) {
+                    } else if (value instanceof Toml.KeyValue && inArray && keyName == null) {
                         Toml.KeyValue kv = (Toml.KeyValue) value;
-                        if (kv.getKey() instanceof Toml.Identifier &&
-                                "dependencies".equals(((Toml.Identifier) kv.getKey()).getName())) {
-                            inDependencies = true;
+                        if (kv.getKey() instanceof Toml.Identifier) {
+                            keyName = ((Toml.Identifier) kv.getKey()).getName();
                         }
-                    } else if (value instanceof Toml.Table && inDependencies) {
+                    } else if (value instanceof Toml.Table && keyName != null) {
                         Toml.Table table = (Toml.Table) value;
-                        if (table.getName() != null && "project".equals(table.getName().getName())) {
-                            inProject = true;
-                            break;
+                        if (table.getName() != null) {
+                            tableName = table.getName().getName();
                         }
+                        break;
                     }
                     c = c.getParent();
                 }
-                return inProject;
+
+                if (keyName == null || tableName == null) {
+                    return false;
+                }
+
+                if (scope == null || "dependencies".equals(scope)) {
+                    return "dependencies".equals(keyName) && "project".equals(tableName);
+                } else if ("optionalDependencies".equals(scope)) {
+                    return groupName != null && groupName.equals(keyName) &&
+                            "project.optional-dependencies".equals(tableName);
+                } else if ("dependencyGroups".equals(scope)) {
+                    return groupName != null && groupName.equals(keyName) &&
+                            "dependency-groups".equals(tableName);
+                }
+                return false;
             }
 
             private String buildNewSpec(String oldSpec, String depName) {

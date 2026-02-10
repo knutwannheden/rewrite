@@ -18,10 +18,7 @@ package org.openrewrite.python;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
 import org.jspecify.annotations.Nullable;
-import org.openrewrite.ExecutionContext;
-import org.openrewrite.Option;
-import org.openrewrite.ScanningRecipe;
-import org.openrewrite.TreeVisitor;
+import org.openrewrite.*;
 import org.openrewrite.marker.Markers;
 import org.openrewrite.python.internal.PyProjectHelper;
 import org.openrewrite.python.marker.PythonResolutionResult;
@@ -36,7 +33,10 @@ import java.util.*;
 import static org.openrewrite.Tree.randomId;
 
 /**
- * Add a dependency to the {@code [project].dependencies} array in pyproject.toml.
+ * Add a dependency to a dependency list in pyproject.toml.
+ * By default, adds to {@code [project].dependencies}. Use the {@code scope} and
+ * {@code groupName} options to target {@code [project.optional-dependencies]} or
+ * {@code [dependency-groups]} instead.
  * When uv is available, the uv.lock file is regenerated to reflect the change.
  */
 @EqualsAndHashCode(callSuper = false)
@@ -55,6 +55,22 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
     @Nullable
     String version;
 
+    @Option(displayName = "Scope",
+            description = "Where to add the dependency. Defaults to `[project].dependencies`.",
+            valid = {"dependencies", "optionalDependencies", "dependencyGroups"},
+            example = "dependencyGroups",
+            required = false)
+    @Nullable
+    String scope;
+
+    @Option(displayName = "Group name",
+            description = "The group name within `[project.optional-dependencies]` or `[dependency-groups]`. " +
+                    "Required when scope is `optionalDependencies` or `dependencyGroups`.",
+            example = "dev",
+            required = false)
+    @Nullable
+    String groupName;
+
     @Override
     public String getDisplayName() {
         return "Add Python dependency";
@@ -67,8 +83,19 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
 
     @Override
     public String getDescription() {
-        return "Add a dependency to the `[project].dependencies` array in `pyproject.toml`. " +
+        return "Add a dependency to a dependency list in `pyproject.toml`. " +
+                "By default adds to `[project].dependencies`. Use `scope` and `groupName` " +
+                "to target `[project.optional-dependencies]` or `[dependency-groups]`. " +
                 "When `uv` is available, the `uv.lock` file is regenerated.";
+    }
+
+    @Override
+    public Validated<Object> validate() {
+        Validated<Object> v = super.validate();
+        if ("optionalDependencies".equals(scope) || "dependencyGroups".equals(scope)) {
+            v = v.and(Validated.required("groupName", groupName));
+        }
+        return v;
     }
 
     static class Accumulator {
@@ -97,8 +124,8 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
 
                 PythonResolutionResult marker = resolution.get();
 
-                // Check if the dependency already exists
-                if (marker.findDependency(packageName) != null) {
+                // Check if the dependency already exists in the target scope
+                if (PyProjectHelper.findDependencyInScope(marker, packageName, scope, groupName) != null) {
                     return document;
                 }
 
@@ -140,7 +167,7 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
             public Toml.Array visitArray(Toml.Array array, ExecutionContext ctx) {
                 Toml.Array a = super.visitArray(array, ctx);
 
-                if (!PyProjectHelper.isInsideProjectDependencies(getCursor())) {
+                if (!PyProjectHelper.isInsideDependencyArray(getCursor(), scope, groupName)) {
                     return a;
                 }
 
