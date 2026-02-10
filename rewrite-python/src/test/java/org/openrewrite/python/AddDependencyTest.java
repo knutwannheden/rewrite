@@ -270,4 +270,63 @@ class AddDependencyTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void addToConstraintDependencies() {
+        rewriteRun(
+          spec -> spec.recipe(new AddDependency("certifi", ">=2024.07.04", "constraintDependencies", null)),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              constraint-dependencies = ["urllib3>=2.0"]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              constraint-dependencies = ["urllib3>=2.0", "certifi>=2024.07.04"]
+              """
+          )
+        );
+    }
+
+    @Test
+    void addToOverrideDependencies() {
+        rewriteRun(
+          spec -> spec.recipe(new AddDependency("urllib3", ">=2.0", "overrideDependencies", null)),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              override-dependencies = [
+                  "certifi>=2024.07.04",
+              ]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              override-dependencies = [
+                  "certifi>=2024.07.04",
+                  "urllib3>=2.0",
+              ]
+              """
+          )
+        );
+    }
 }

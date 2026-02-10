@@ -87,6 +87,19 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
      */
     Map<String, List<Dependency>> dependencyGroups;
 
+    /**
+     * Constraint dependencies from [tool.uv].constraint-dependencies.
+     * Applied during resolution to narrow allowed versions of transitive dependencies
+     * without adding them as direct dependencies (similar to Maven's dependencyManagement).
+     */
+    List<Dependency> constraintDependencies;
+
+    /**
+     * Override dependencies from [tool.uv].override-dependencies.
+     * Forces specific versions during resolution, overriding all other version requirements.
+     */
+    List<Dependency> overrideDependencies;
+
     List<ResolvedDependency> resolvedDependencies;
 
     @Nullable PackageManager packageManager;
@@ -123,7 +136,8 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
 
     /**
      * Find a declared dependency by package name across all scopes:
-     * dependencies, buildRequires, optionalDependencies, and dependencyGroups.
+     * dependencies, buildRequires, optionalDependencies, dependencyGroups,
+     * constraintDependencies, and overrideDependencies.
      *
      * @param packageName The name of the package (case-insensitive, normalized per PEP 503)
      * @return The dependency, or null if not found in any scope
@@ -154,12 +168,23 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
                 }
             }
         }
+        for (Dependency dep : constraintDependencies) {
+            if (normalizeName(dep.getName()).equals(normalized)) {
+                return dep;
+            }
+        }
+        for (Dependency dep : overrideDependencies) {
+            if (normalizeName(dep.getName()).equals(normalized)) {
+                return dep;
+            }
+        }
         return null;
     }
 
     /**
      * Get all declared dependencies across all scopes as a flat list.
-     * Includes dependencies, buildRequires, optionalDependencies values, and dependencyGroups values.
+     * Includes dependencies, buildRequires, optionalDependencies values,
+     * dependencyGroups values, constraintDependencies, and overrideDependencies.
      */
     public List<Dependency> getAllDeclaredDependencies() {
         List<Dependency> all = new ArrayList<>(dependencies);
@@ -170,6 +195,8 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
         for (List<Dependency> deps : dependencyGroups.values()) {
             all.addAll(deps);
         }
+        all.addAll(constraintDependencies);
+        all.addAll(overrideDependencies);
         return all;
     }
 
@@ -198,6 +225,12 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
                 dep -> dep.rpcSend(dep, q));
         q.getAndSend(after, PythonResolutionResult::getOptionalDependencies);
         q.getAndSend(after, PythonResolutionResult::getDependencyGroups);
+        q.getAndSendListAsRef(after, PythonResolutionResult::getConstraintDependencies,
+                dep -> dep.getName() + "@" + dep.getVersionConstraint(),
+                dep -> dep.rpcSend(dep, q));
+        q.getAndSendListAsRef(after, PythonResolutionResult::getOverrideDependencies,
+                dep -> dep.getName() + "@" + dep.getVersionConstraint(),
+                dep -> dep.rpcSend(dep, q));
         q.getAndSendListAsRef(after, PythonResolutionResult::getResolvedDependencies,
                 resolved -> resolved.getName() + "@" + resolved.getVersion(),
                 resolved -> resolved.rpcSend(resolved, q));
@@ -224,6 +257,10 @@ public class PythonResolutionResult implements Marker, RpcCodec<PythonResolution
                         dep -> dep.rpcReceive(dep, q)))
                 .withOptionalDependencies(q.receive(before.optionalDependencies))
                 .withDependencyGroups(q.receive(before.dependencyGroups))
+                .withConstraintDependencies(q.receiveList(before.constraintDependencies,
+                        dep -> dep.rpcReceive(dep, q)))
+                .withOverrideDependencies(q.receiveList(before.overrideDependencies,
+                        dep -> dep.rpcReceive(dep, q)))
                 .withResolvedDependencies(q.receiveList(before.resolvedDependencies,
                         resolved -> resolved.rpcReceive(resolved, q)))
                 .withPackageManager(q.receiveAndGet(before.packageManager, toEnum(PackageManager.class)))

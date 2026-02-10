@@ -50,7 +50,8 @@ public class UpgradeDependencyVersion extends ScanningRecipe<UpgradeDependencyVe
 
     @Option(displayName = "Scope",
             description = "Where to upgrade the dependency. Defaults to `[project].dependencies`.",
-            valid = {"dependencies", "optionalDependencies", "dependencyGroups"},
+            valid = {"dependencies", "optionalDependencies", "dependencyGroups",
+                    "constraintDependencies", "overrideDependencies"},
             example = "dependencyGroups",
             required = false)
     @Nullable
@@ -230,6 +231,10 @@ public class UpgradeDependencyVersion extends ScanningRecipe<UpgradeDependencyVe
                 } else if ("dependencyGroups".equals(scope)) {
                     return groupName != null && groupName.equals(keyName) &&
                             "dependency-groups".equals(tableName);
+                } else if ("constraintDependencies".equals(scope)) {
+                    return "constraint-dependencies".equals(keyName) && "tool.uv".equals(tableName);
+                } else if ("overrideDependencies".equals(scope)) {
+                    return "override-dependencies".equals(keyName) && "tool.uv".equals(tableName);
                 }
                 return false;
             }

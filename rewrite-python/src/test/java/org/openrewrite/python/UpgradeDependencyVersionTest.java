@@ -289,4 +289,62 @@ class UpgradeDependencyVersionTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void upgradeConstraintDependency() {
+        rewriteRun(
+          spec -> spec.recipe(new UpgradeDependencyVersion("certifi", ">=2024.07.04", "constraintDependencies", null)),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              constraint-dependencies = ["certifi>=2023.01.01", "urllib3>=2.0"]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              constraint-dependencies = ["certifi>=2024.07.04", "urllib3>=2.0"]
+              """
+          )
+        );
+    }
+
+    @Test
+    void upgradeOverrideDependency() {
+        rewriteRun(
+          spec -> spec.recipe(new UpgradeDependencyVersion("urllib3", ">=2.2", "overrideDependencies", null)),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              override-dependencies = [
+                  "urllib3>=2.0",
+              ]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              override-dependencies = [
+                  "urllib3>=2.2",
+              ]
+              """
+          )
+        );
+    }
 }

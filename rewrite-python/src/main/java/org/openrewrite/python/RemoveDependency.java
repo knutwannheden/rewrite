@@ -46,7 +46,8 @@ public class RemoveDependency extends ScanningRecipe<RemoveDependency.Accumulato
 
     @Option(displayName = "Scope",
             description = "Where to remove the dependency from. Defaults to `[project].dependencies`.",
-            valid = {"dependencies", "optionalDependencies", "dependencyGroups"},
+            valid = {"dependencies", "optionalDependencies", "dependencyGroups",
+                    "constraintDependencies", "overrideDependencies"},
             example = "dependencyGroups",
             required = false)
     @Nullable

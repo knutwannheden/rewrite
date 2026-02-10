@@ -139,8 +139,10 @@ public class PyProjectHelper {
      * @param cursor    the current cursor position (should be at an Array node)
      * @param scope     the dependency scope: {@code null} or {@code "dependencies"} for
      *                  {@code [project].dependencies}, {@code "optionalDependencies"} for
-     *                  {@code [project.optional-dependencies].<groupName>}, or
-     *                  {@code "dependencyGroups"} for {@code [dependency-groups].<groupName>}
+     *                  {@code [project.optional-dependencies].<groupName>},
+     *                  {@code "dependencyGroups"} for {@code [dependency-groups].<groupName>},
+     *                  {@code "constraintDependencies"} for {@code [tool.uv].constraint-dependencies}, or
+     *                  {@code "overrideDependencies"} for {@code [tool.uv].override-dependencies}
      * @param groupName the group name within optional-dependencies or dependency-groups
      * @return true if the cursor is inside the matching dependency array
      */
@@ -173,6 +175,10 @@ public class PyProjectHelper {
         } else if ("dependencyGroups".equals(scope)) {
             return groupName != null && groupName.equals(keyName) &&
                     "dependency-groups".equals(tableName);
+        } else if ("constraintDependencies".equals(scope)) {
+            return "constraint-dependencies".equals(keyName) && "tool.uv".equals(tableName);
+        } else if ("overrideDependencies".equals(scope)) {
+            return "override-dependencies".equals(keyName) && "tool.uv".equals(tableName);
         }
         return false;
     }
@@ -182,7 +188,8 @@ public class PyProjectHelper {
      *
      * @param marker      the resolution result marker
      * @param packageName the package name to find (PEP 503 normalized matching)
-     * @param scope       the scope to search (null or "dependencies", "optionalDependencies", "dependencyGroups")
+     * @param scope       the scope to search (null or "dependencies", "optionalDependencies",
+     *                    "dependencyGroups", "constraintDependencies", "overrideDependencies")
      * @param groupName   the group name within optional-dependencies or dependency-groups
      * @return the dependency, or null if not found
      */
@@ -216,6 +223,20 @@ public class PyProjectHelper {
                         return dep;
                     }
                 }
+            }
+        } else if ("constraintDependencies".equals(scope)) {
+            return findInList(marker.getConstraintDependencies(), normalized);
+        } else if ("overrideDependencies".equals(scope)) {
+            return findInList(marker.getOverrideDependencies(), normalized);
+        }
+        return null;
+    }
+
+    private static PythonResolutionResult.@Nullable Dependency findInList(
+            List<PythonResolutionResult.Dependency> deps, String normalizedName) {
+        for (PythonResolutionResult.Dependency dep : deps) {
+            if (PythonResolutionResult.normalizeName(dep.getName()).equals(normalizedName)) {
+                return dep;
             }
         }
         return null;

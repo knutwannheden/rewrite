@@ -287,4 +287,31 @@ class RemoveDependencyTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void removeFromConstraintDependencies() {
+        rewriteRun(
+          spec -> spec.recipe(new RemoveDependency("certifi", "constraintDependencies", null)),
+          pyproject(
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              constraint-dependencies = ["certifi>=2024.07.04", "urllib3>=2.0"]
+              """,
+            """
+              [project]
+              name = "myapp"
+              version = "1.0.0"
+              dependencies = ["requests>=2.28.0"]
+
+              [tool.uv]
+              constraint-dependencies = ["urllib3>=2.0"]
+              """
+          )
+        );
+    }
 }

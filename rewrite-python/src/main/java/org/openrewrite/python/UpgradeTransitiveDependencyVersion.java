@@ -33,74 +33,54 @@ import java.util.*;
 import static org.openrewrite.Tree.randomId;
 
 /**
- * Add a dependency to a dependency list in pyproject.toml.
- * By default, adds to {@code [project].dependencies}. Use the {@code scope} and
- * {@code groupName} options to target {@code [project.optional-dependencies]} or
- * {@code [dependency-groups]} instead.
- * When uv is available, the uv.lock file is regenerated to reflect the change.
+ * Upgrade the version of a transitive (indirect) dependency by adding or updating
+ * a constraint in {@code [tool.uv].constraint-dependencies} in pyproject.toml.
+ * <p>
+ * This is the Python/uv equivalent of Maven's {@code UpgradeTransitiveDependencyVersion},
+ * which uses {@code <dependencyManagement>} to pin transitive versions.
+ * <p>
+ * If the package is already a direct dependency, this recipe does nothing &mdash; use
+ * {@link UpgradeDependencyVersion} to upgrade direct dependencies instead.
  */
 @EqualsAndHashCode(callSuper = false)
 @Value
-public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
+public class UpgradeTransitiveDependencyVersion extends ScanningRecipe<UpgradeTransitiveDependencyVersion.Accumulator> {
 
     @Option(displayName = "Package name",
-            description = "The PyPI package name to add.",
-            example = "requests")
+            description = "The PyPI package name to constrain.",
+            example = "certifi")
     String packageName;
 
     @Option(displayName = "Version",
-            description = "The PEP 508 version constraint (e.g., `>=2.28.0`).",
-            example = ">=2.28.0",
-            required = false)
-    @Nullable
+            description = "The PEP 508 version constraint to apply (e.g., `>=2024.07.04`).",
+            example = ">=2024.07.04")
     String version;
-
-    @Option(displayName = "Scope",
-            description = "Where to add the dependency. Defaults to `[project].dependencies`.",
-            valid = {"dependencies", "optionalDependencies", "dependencyGroups",
-                    "constraintDependencies", "overrideDependencies"},
-            example = "dependencyGroups",
-            required = false)
-    @Nullable
-    String scope;
-
-    @Option(displayName = "Group name",
-            description = "The group name within `[project.optional-dependencies]` or `[dependency-groups]`. " +
-                    "Required when scope is `optionalDependencies` or `dependencyGroups`.",
-            example = "dev",
-            required = false)
-    @Nullable
-    String groupName;
 
     @Override
     public String getDisplayName() {
-        return "Add Python dependency";
+        return "Upgrade transitive Python dependency version";
     }
 
     @Override
     public String getInstanceNameSuffix() {
-        return String.format("`%s`", packageName);
+        return String.format("`%s` to `%s`", packageName, version);
     }
 
     @Override
     public String getDescription() {
-        return "Add a dependency to a dependency list in `pyproject.toml`. " +
-                "By default adds to `[project].dependencies`. Use `scope` and `groupName` " +
-                "to target `[project.optional-dependencies]` or `[dependency-groups]`. " +
-                "When `uv` is available, the `uv.lock` file is regenerated.";
+        return "Upgrade the version of a transitive dependency by adding or updating a constraint " +
+                "in `[tool.uv].constraint-dependencies` in `pyproject.toml`. " +
+                "If the package is already a direct dependency, no changes are made.";
     }
 
-    @Override
-    public Validated<Object> validate() {
-        Validated<Object> v = super.validate();
-        if ("optionalDependencies".equals(scope) || "dependencyGroups".equals(scope)) {
-            v = v.and(Validated.required("groupName", groupName));
-        }
-        return v;
+    enum Action {
+        NONE,
+        ADD_CONSTRAINT,
+        UPGRADE_CONSTRAINT
     }
 
     static class Accumulator {
-        final Set<String> projectsToUpdate = new HashSet<>();
+        final Map<String, Action> projectActions = new HashMap<>();
         final Map<String, String> updatedLockFiles = new HashMap<>();
     }
 
@@ -124,13 +104,31 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
                 }
 
                 PythonResolutionResult marker = resolution.get();
+                String sourcePath = document.getSourcePath().toString();
 
-                // Check if the dependency already exists in the target scope
-                if (PyProjectHelper.findDependencyInScope(marker, packageName, scope, groupName) != null) {
+                // Skip if it's already a direct dependency
+                if (marker.findDependency(packageName) != null) {
                     return document;
                 }
 
-                acc.projectsToUpdate.add(document.getSourcePath().toString());
+                // Check if it's in the resolved (locked) dependencies at all
+                if (marker.getResolvedDependency(packageName) == null) {
+                    return document;
+                }
+
+                // Check if a constraint already exists
+                PythonResolutionResult.Dependency existingConstraint =
+                        PyProjectHelper.findDependencyInScope(marker, packageName, "constraintDependencies", null);
+
+                if (existingConstraint != null) {
+                    // Already constrained — upgrade if version differs
+                    if (!version.equals(existingConstraint.getVersionConstraint())) {
+                        acc.projectActions.put(sourcePath, Action.UPGRADE_CONSTRAINT);
+                    }
+                } else {
+                    acc.projectActions.put(sourcePath, Action.ADD_CONSTRAINT);
+                }
+
                 return document;
             }
         };
@@ -143,8 +141,13 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
             public Toml.Document visitDocument(Toml.Document document, ExecutionContext ctx) {
                 String sourcePath = document.getSourcePath().toString();
 
-                if (sourcePath.endsWith("pyproject.toml") && acc.projectsToUpdate.contains(sourcePath)) {
-                    return addDependencyToPyproject(document, ctx, acc);
+                if (sourcePath.endsWith("pyproject.toml")) {
+                    Action action = acc.projectActions.get(sourcePath);
+                    if (action == Action.ADD_CONSTRAINT) {
+                        return addConstraint(document, ctx, acc);
+                    } else if (action == Action.UPGRADE_CONSTRAINT) {
+                        return upgradeConstraint(document, ctx, acc);
+                    }
                 }
 
                 if (sourcePath.endsWith("uv.lock")) {
@@ -160,15 +163,15 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
         };
     }
 
-    private Toml.Document addDependencyToPyproject(Toml.Document document, ExecutionContext ctx, Accumulator acc) {
-        String pep508 = version != null ? packageName + version : packageName;
+    private Toml.Document addConstraint(Toml.Document document, ExecutionContext ctx, Accumulator acc) {
+        String pep508 = packageName + version;
 
         Toml.Document updated = (Toml.Document) new TomlIsoVisitor<ExecutionContext>() {
             @Override
             public Toml.Array visitArray(Toml.Array array, ExecutionContext ctx) {
                 Toml.Array a = super.visitArray(array, ctx);
 
-                if (!PyProjectHelper.isInsideDependencyArray(getCursor(), scope, groupName)) {
+                if (!PyProjectHelper.isInsideDependencyArray(getCursor(), "constraintDependencies", null)) {
                     return a;
                 }
 
@@ -184,52 +187,116 @@ public class AddDependency extends ScanningRecipe<AddDependency.Accumulator> {
                 List<TomlRightPadded<Toml>> existingPadded = a.getPadding().getValues();
                 List<TomlRightPadded<Toml>> newPadded = new ArrayList<>();
 
-                // An empty TOML array [] is represented as a single Toml.Empty element
                 boolean isEmpty = existingPadded.size() == 1 &&
                         existingPadded.get(0).getElement() instanceof Toml.Empty;
                 if (existingPadded.isEmpty() || isEmpty) {
                     newPadded.add(new TomlRightPadded<>(newLiteral, Space.EMPTY, Markers.EMPTY));
                 } else {
-                    // Check if the last element is Toml.Empty (trailing comma marker)
                     TomlRightPadded<Toml> lastPadded = existingPadded.get(existingPadded.size() - 1);
                     boolean hasTrailingComma = lastPadded.getElement() instanceof Toml.Empty;
 
                     if (hasTrailingComma) {
-                        // Insert before the Empty element. The Empty's position
-                        // stores the whitespace before ']'.
-                        // Find the last real element to copy its prefix formatting
                         int lastRealIdx = existingPadded.size() - 2;
                         Toml lastRealElement = existingPadded.get(lastRealIdx).getElement();
                         Toml.Literal formattedLiteral = newLiteral.withPrefix(lastRealElement.getPrefix());
-
-                        // Copy all existing elements up to (not including) the Empty
                         for (int i = 0; i <= lastRealIdx; i++) {
                             newPadded.add(existingPadded.get(i));
                         }
-                        // Add new literal with empty after (comma added by printer)
                         newPadded.add(new TomlRightPadded<>(formattedLiteral, Space.EMPTY, Markers.EMPTY));
-                        // Keep the Empty element for trailing comma + closing bracket whitespace
                         newPadded.add(lastPadded);
                     } else {
-                        // No trailing comma — the last real element's after has the space before ']'
                         Toml lastElement = lastPadded.getElement();
-                        // For multi-line arrays, use same prefix; for inline, use single space
                         Space newPrefix = lastElement.getPrefix().getWhitespace().contains("\n")
                                 ? lastElement.getPrefix()
                                 : Space.SINGLE_SPACE;
                         Toml.Literal formattedLiteral = newLiteral.withPrefix(newPrefix);
-
-                        // Copy all existing elements but set last one's after to empty
                         for (int i = 0; i < existingPadded.size() - 1; i++) {
                             newPadded.add(existingPadded.get(i));
                         }
                         newPadded.add(lastPadded.withAfter(Space.EMPTY));
-                        // New element gets the after from the old last element
                         newPadded.add(new TomlRightPadded<>(formattedLiteral, lastPadded.getAfter(), Markers.EMPTY));
                     }
                 }
 
                 return a.getPadding().withValues(newPadded);
+            }
+        }.visitNonNull(document, ctx);
+
+        if (updated != document) {
+            updated = PyProjectHelper.regenerateLockAndRefreshMarker(updated, acc.updatedLockFiles);
+        }
+
+        return updated;
+    }
+
+    private Toml.Document upgradeConstraint(Toml.Document document, ExecutionContext ctx, Accumulator acc) {
+        String normalizedName = PythonResolutionResult.normalizeName(packageName);
+
+        Toml.Document updated = (Toml.Document) new TomlIsoVisitor<ExecutionContext>() {
+            @Override
+            public Toml.Literal visitLiteral(Toml.Literal literal, ExecutionContext ctx) {
+                Toml.Literal l = super.visitLiteral(literal, ctx);
+                if (l.getType() != TomlType.Primitive.String) {
+                    return l;
+                }
+
+                Object val = l.getValue();
+                if (!(val instanceof String)) {
+                    return l;
+                }
+
+                // Walk cursor to verify we're in [tool.uv].constraint-dependencies
+                if (!isInsideConstraintDependencies()) {
+                    return l;
+                }
+
+                String spec = (String) val;
+                String depName = PyProjectHelper.extractPackageName(spec);
+                if (depName == null || !PythonResolutionResult.normalizeName(depName).equals(normalizedName)) {
+                    return l;
+                }
+
+                String extras = UpgradeDependencyVersion.extractExtras(spec);
+                String marker = UpgradeDependencyVersion.extractMarker(spec);
+
+                StringBuilder sb = new StringBuilder(depName);
+                if (extras != null) {
+                    sb.append('[').append(extras).append(']');
+                }
+                sb.append(version);
+                if (marker != null) {
+                    sb.append("; ").append(marker);
+                }
+                String newSpec = sb.toString();
+                return l.withSource("\"" + newSpec + "\"").withValue(newSpec);
+            }
+
+            private boolean isInsideConstraintDependencies() {
+                Cursor c = getCursor();
+                boolean inArray = false;
+                String keyName = null;
+                String tableName = null;
+
+                while (c != null) {
+                    Object value = c.getValue();
+                    if (value instanceof Toml.Array) {
+                        inArray = true;
+                    } else if (value instanceof Toml.KeyValue && inArray && keyName == null) {
+                        Toml.KeyValue kv = (Toml.KeyValue) value;
+                        if (kv.getKey() instanceof Toml.Identifier) {
+                            keyName = ((Toml.Identifier) kv.getKey()).getName();
+                        }
+                    } else if (value instanceof Toml.Table && keyName != null) {
+                        Toml.Table table = (Toml.Table) value;
+                        if (table.getName() != null) {
+                            tableName = table.getName().getName();
+                        }
+                        break;
+                    }
+                    c = c.getParent();
+                }
+
+                return "constraint-dependencies".equals(keyName) && "tool.uv".equals(tableName);
             }
         }.visitNonNull(document, ctx);
 

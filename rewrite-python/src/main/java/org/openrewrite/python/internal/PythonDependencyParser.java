@@ -62,6 +62,11 @@ public class PythonDependencyParser {
         Map<String, List<Dependency>> optionalDependencies = getOptionalDependencies(tables);
         Map<String, List<Dependency>> dependencyGroups = getDependencyGroups(tables);
 
+        // Extract [tool.uv] constraint and override dependencies
+        Toml.Table toolUvTable = tables.get("tool.uv");
+        List<Dependency> constraintDependencies = getDependencyList(toolUvTable, "constraint-dependencies");
+        List<Dependency> overrideDependencies = getDependencyList(toolUvTable, "override-dependencies");
+
         String path = doc.getSourcePath().toString();
 
         return new PythonResolutionResult(
@@ -77,6 +82,8 @@ public class PythonDependencyParser {
                 dependencies,
                 optionalDependencies,
                 dependencyGroups,
+                constraintDependencies,
+                overrideDependencies,
                 Collections.emptyList(),
                 null,
                 null
