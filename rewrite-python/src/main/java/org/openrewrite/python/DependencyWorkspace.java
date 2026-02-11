@@ -16,6 +16,7 @@
 package org.openrewrite.python;
 
 import lombok.experimental.UtilityClass;
+import org.jspecify.annotations.Nullable;
 import org.openrewrite.python.internal.UvExecutor;
 
 import java.io.IOException;
@@ -169,6 +170,13 @@ class DependencyWorkspace {
                 Files.exists(workspaceDir.resolve("pyproject.toml"));
     }
 
+    private static boolean isRequirementsWorkspaceValid(Path workspaceDir) {
+        return Files.exists(workspaceDir) &&
+                Files.isDirectory(workspaceDir.resolve(".venv")) &&
+                Files.exists(workspaceDir.resolve("requirements.txt")) &&
+                Files.exists(workspaceDir.resolve(".freeze"));
+    }
+
     private static void cleanupDirectory(Path dir) {
         try {
             if (Files.exists(dir)) {
@@ -187,6 +195,117 @@ class DependencyWorkspace {
         }
     }
 
+    /**
+     * Gets or creates a workspace directory for the given requirements.txt content.
+     * Creates a venv, installs dependencies, and caches a {@code uv pip freeze} snapshot.
+     *
+     * @param requirementsContent the complete requirements.txt file content
+     * @param originalFile        the original file path (for resolving {@code -r} includes), or null
+     * @return path to the workspace directory, or null if uv is not available or installation fails
+     */
+    static @Nullable Path getOrCreateRequirementsWorkspace(String requirementsContent, @Nullable Path originalFile) {
+        String uvPath = UvExecutor.findUvExecutable();
+        if (uvPath == null) {
+            return null;
+        }
+
+        String hash = "req-" + hashContent(requirementsContent);
+
+        // Check in-memory cache
+        Path cached = cache.get(hash);
+        if (cached != null && isRequirementsWorkspaceValid(cached)) {
+            return cached;
+        }
+
+        // Check disk cache
+        Path workspaceDir = WORKSPACE_BASE.resolve(hash);
+        if (isRequirementsWorkspaceValid(workspaceDir)) {
+            cache.put(hash, workspaceDir);
+            return workspaceDir;
+        }
+
+        // Create new workspace
+        try {
+            Files.createDirectories(WORKSPACE_BASE);
+            Path tempDir = Files.createTempDirectory(WORKSPACE_BASE, hash + ".tmp-");
+
+            try {
+                Files.write(
+                        tempDir.resolve("requirements.txt"),
+                        requirementsContent.getBytes(StandardCharsets.UTF_8)
+                );
+
+                // Create venv
+                UvExecutor.RunResult venvResult = UvExecutor.run(tempDir, uvPath, "venv", ".venv");
+                if (!venvResult.isSuccess()) {
+                    return null;
+                }
+
+                // Install dependencies — use original file path when available so that
+                // relative -r includes resolve correctly
+                String reqPath = (originalFile != null && Files.isRegularFile(originalFile))
+                        ? originalFile.toAbsolutePath().toString()
+                        : "requirements.txt";
+                UvExecutor.RunResult installResult = UvExecutor.run(tempDir, uvPath,
+                        "pip", "install", "-r", reqPath);
+                if (!installResult.isSuccess()) {
+                    return null;
+                }
+
+                // Capture the transitive closure *before* installing tooling
+                UvExecutor.RunResult freezeResult = UvExecutor.run(tempDir, uvPath, "pip", "freeze");
+                if (freezeResult.isSuccess()) {
+                    Files.write(
+                            tempDir.resolve(".freeze"),
+                            freezeResult.getStdout().getBytes(StandardCharsets.UTF_8)
+                    );
+                }
+
+                // Install ty for type attribution (after freeze so it is not included)
+                UvExecutor.run(tempDir, uvPath, "pip", "install", "ty");
+
+                // Move to final location atomically
+                try {
+                    Files.move(tempDir, workspaceDir);
+                } catch (IOException e) {
+                    if (isRequirementsWorkspaceValid(workspaceDir)) {
+                        cleanupDirectory(tempDir);
+                    } else {
+                        throw e;
+                    }
+                }
+
+                cache.put(hash, workspaceDir);
+                return workspaceDir;
+
+            } catch (Exception e) {
+                cleanupDirectory(tempDir);
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                return null;
+            }
+
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Read the cached {@code uv pip freeze} output from a requirements workspace.
+     */
+    static @Nullable String readFreezeOutput(Path workspaceDir) {
+        Path freezeFile = workspaceDir.resolve(".freeze");
+        try {
+            if (Files.exists(freezeFile)) {
+                return new String(Files.readAllBytes(freezeFile), StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            // fall through
+        }
+        return null;
+    }
+
     static void clearCache() {
         cache.clear();
     }
@@ -200,7 +319,7 @@ class DependencyWorkspace {
             Files.list(WORKSPACE_BASE)
                     .filter(Files::isDirectory)
                     .filter(dir -> !dir.getFileName().toString().contains(".tmp-"))
-                    .filter(DependencyWorkspace::isWorkspaceValid)
+                    .filter(dir -> isWorkspaceValid(dir) || isRequirementsWorkspaceValid(dir))
                     .sorted((a, b) -> {
                         try {
                             return Files.getLastModifiedTime(a).compareTo(Files.getLastModifiedTime(b));
